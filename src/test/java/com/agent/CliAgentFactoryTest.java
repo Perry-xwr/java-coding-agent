@@ -51,7 +51,10 @@ class CliAgentFactoryTest {
         code.run("modify a file");
 
         assertEquals(
-                List.of("list_files", "read_file", "search_code", "apply_patch", "run_maven_test"),
+                List.of(
+                        "list_files", "read_file", "search_code", "apply_patch",
+                        "create_file", "run_maven_test"
+                ),
                 client.toolNames().get(0)
         );
         assertEquals(2, client.requests().size());

@@ -99,6 +99,30 @@ public class ToolRegistry {
         return registry;
     }
 
+    /**
+     * CLI-only coding tools. Kept separate so frozen Benchmark baselines retain their original set.
+     */
+    public static ToolRegistry withCliCodingTools(
+            Path root,
+            ProcessRunner processRunner,
+            Path localRepository
+    ) {
+        Objects.requireNonNull(root, "root must not be null");
+        Objects.requireNonNull(processRunner, "processRunner must not be null");
+        Objects.requireNonNull(localRepository, "localRepository must not be null");
+
+        ToolRegistry registry = new ToolRegistry(true);
+        ObjectMapper objectMapper = new ObjectMapper();
+        WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
+        registerFileTools(registry, objectMapper, pathResolver);
+        registry.register(new ApplyPatchTool(pathResolver, objectMapper));
+        registry.register(new CreateFileTool(pathResolver, objectMapper));
+        registry.register(new RunMavenTestTool(
+                pathResolver.root(), processRunner, localRepository, objectMapper
+        ));
+        return registry;
+    }
+
     public static ToolRegistry withPreciseEditCodingTools(
             Path root,
             ProcessRunner processRunner,
@@ -197,6 +221,9 @@ public class ToolRegistry {
                     + "TEXT_NOT_FOUND or MULTIPLE_MATCHES, reread with line numbers and use "
                     + "replace_lines instead of guessing oldText again."
                     : "precise patch instead of repeating the same call.");
+            case "create_file" -> tool.description()
+                    + " Use it only for a genuinely new file. For an existing file, use apply_patch; "
+                    + "create_file never overwrites a path that already exists.";
             case "replace_lines" -> tool.description()
                     + " Use it for a clear local range copied from the latest line-numbered read. "
                     + "After STALE_EDIT_CONTEXT, reread the file and construct a fresh range edit.";

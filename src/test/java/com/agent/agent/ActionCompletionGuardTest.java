@@ -32,6 +32,7 @@ class ActionCompletionGuardTest {
                 call("read", "read_file", "{\"path\":\"App.java\"}"),
                 answer("Replace subtraction with addition."),
                 call("patch", "apply_patch", patch("a - b", "a + b")),
+                call("read-after-patch", "read_file", "{\"path\":\"App.java\"}"),
                 call("test", "run_maven_test", "{}"),
                 answer("Fixed and verified.")
         ), new QueueRunner(List.of(successfulTest())));
@@ -51,6 +52,7 @@ class ActionCompletionGuardTest {
         Files.writeString(workspace.resolve("App.java"), "old");
         Agent agent = actionAgent(List.of(
                 call("patch", "apply_patch", patch("old", "new")),
+                call("read", "read_file", "{\"path\":\"App.java\"}"),
                 answer("Done."),
                 call("test", "run_maven_test", "{}"),
                 answer("Verified.")
@@ -59,7 +61,7 @@ class ActionCompletionGuardTest {
         AgentRunResult result = agent.runWithTrajectory("Change App");
 
         assertEquals("Verified.", result.finalAnswer());
-        assertEquals(1, feedbackCount(result, "VALIDATION_GUARD:"));
+        assertEquals(1, feedbackCount(result, "JAVA_VERIFICATION_GUARD:"));
     }
 
     @Test
@@ -67,9 +69,11 @@ class ActionCompletionGuardTest {
         Path source = Files.writeString(workspace.resolve("App.java"), "a - b");
         Agent agent = actionAgent(List.of(
                 call("patch-wrong", "apply_patch", patch("a - b", "a * b")),
+                call("read-wrong", "read_file", "{\"path\":\"App.java\"}"),
                 call("test-fail", "run_maven_test", "{}"),
                 answer("Finished."),
                 call("patch-fix", "apply_patch", patch("a * b", "a + b")),
+                call("read-fixed", "read_file", "{\"path\":\"App.java\"}"),
                 call("test-pass", "run_maven_test", "{}"),
                 answer("Fixed after recovery.")
         ), new QueueRunner(List.of(
@@ -113,6 +117,7 @@ class ActionCompletionGuardTest {
                 call("good-list", "list_files", "{\"path\":\".\"}"),
                 call("read", "read_file", "{\"path\":\"App.java\"}"),
                 call("patch", "apply_patch", patch("old", "new")),
+                call("read-after-patch", "read_file", "{\"path\":\"App.java\"}"),
                 call("test", "run_maven_test", "{}"),
                 answer("Recovered and verified.")
         ), new QueueRunner(List.of(successfulTest())));
@@ -132,7 +137,9 @@ class ActionCompletionGuardTest {
         Agent agent = actionAgent(List.of(
                 call("p1", "apply_patch", missingPatch),
                 call("p2", "apply_patch", missingPatch),
+                call("read", "read_file", "{\"path\":\"App.java\"}"),
                 call("p3", "apply_patch", patch("actual", "new")),
+                call("read-after-patch", "read_file", "{\"path\":\"App.java\"}"),
                 call("test", "run_maven_test", "{}"),
                 answer("Recovered.")
         ), new QueueRunner(List.of(successfulTest())));

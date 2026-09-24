@@ -32,6 +32,16 @@ public final class CliAgentFactory {
             Diagnosis, a suggested patch, or a code snippet is not task completion.
             When the user names an exact workspace-relative file path, read and edit that exact file.
             Do not substitute a different same-named file found elsewhere in the workspace.
+            Use apply_patch for existing files. Use create_file only for a genuinely new file; it never
+            overwrites an existing path.
+            To insert code into an existing file, first read_file, choose a stable unique non-empty
+            anchor, and replace that anchor with the original anchor plus the inserted code. Never use
+            an empty oldText. If create_file reports FILE_ALREADY_EXISTS, read that file and use
+            apply_patch if a change is still needed; do not retry create_file for the same path.
+            After a successful write, read the exact changed file again before another write or final
+            answer. Confirm both the requested change and preservation of existing content.
+            Never claim that tests passed unless run_maven_test actually succeeded after the latest
+            workspace change. For Java source or test changes, run Maven tests when the tool is available.
 
             For a code-modification task, inspect the relevant code, make the required change with
             apply_patch, and validate the workspace. When run_maven_test is available and applicable,
@@ -43,7 +53,8 @@ public final class CliAgentFactory {
             choose another tool. An empty search result does not prove that the code is absent; try
             list_files, read_file, another query, or another directory. After TEXT_NOT_FOUND or
             MULTIPLE_MATCHES, reread the latest file and construct a more precise patch. Do not repeat
-            an identical failed action without changing the strategy.
+            an identical failed action without changing the strategy. After NO_EFFECT_CHANGE, inspect
+            the current file and task again instead of resubmitting the same patch.
 
             After run_maven_test fails, read the key diagnostic carefully and identify the exact
             file, line, symbol, syntax error, or assertion involved. Re-read the current version of
@@ -117,7 +128,7 @@ public final class CliAgentFactory {
             AgentEventListener eventListener
     ) {
         Path normalizedWorkspace = normalize(workspace);
-        ToolRegistry registry = ToolRegistry.withActionOrientedCodingTools(
+        ToolRegistry registry = ToolRegistry.withCliCodingTools(
                 normalizedWorkspace,
                 new DefaultProcessRunner(),
                 normalizedWorkspace.resolve(".m2/repository")

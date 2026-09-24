@@ -48,6 +48,8 @@ class PreciseEditRecoveryTest {
                         "{\"path\":\"Example.java\",\"startLine\":3,\"endLine\":3,"
                                 + "\"expectedText\":\"    return a==b;\","
                                 + "\"newText\":\"    return a != b;\"}"),
+                call("read3", "read_file",
+                        "{\"path\":\"Example.java\",\"includeLineNumbers\":true}"),
                 call("test1", "run_maven_test", "{}"),
                 new LLMResponse("Done", List.of())
         ));

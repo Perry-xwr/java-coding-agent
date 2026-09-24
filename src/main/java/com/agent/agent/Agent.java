@@ -154,13 +154,18 @@ public class Agent {
         int prematureFinalGuards = 0;
         int validationGuards = 0;
         int failedTestGuards = 0;
+        int postMutationReadGuards = 0;
+        int infrastructureTestWarnings = 0;
         int repeatedActionWarnings = 0;
         int patchFreshnessWarnings = 0;
         int searchChurnWarnings = 0;
         int budgetWarnings = 0;
         int planCompletionWarnings = 0;
+        int mutationGuardStep = 0;
         String previousFailedAction = null;
         int consecutiveIdenticalFailures = 0;
+        boolean mavenVerificationAvailable = toolRegistry.definitions().stream()
+                .anyMatch(definition -> "run_maven_test".equals(definition.name()));
 
         history.add(Message.user(task));
 
@@ -239,31 +244,90 @@ public class Agent {
             if (toolCalls.isEmpty()) {
                 String feedback = null;
                 if (taskMode == TaskMode.CODE_MODIFICATION) {
-                    if (!progress.hasSuccessfulPatch() && prematureFinalGuards < 1) {
+                    if (!progress.hasSuccessfulMutation() && prematureFinalGuards < 1) {
                         prematureFinalGuards++;
-                        feedback = "PREMATURE_FINAL_GUARD: The task requires an actual workspace "
-                                + "modification, but no file has been successfully changed. Do not only "
-                                + "describe or show the proposed fix. Use apply_patch, then validate it.";
-                    } else if (progress.hasRunTest()
-                            && Boolean.FALSE.equals(progress.lastTestPassed())
+                        mutationGuardStep = steps.size() + 1;
+                        feedback = "PREMATURE_FINAL_GUARD: No workspace mutation succeeded. Do not "
+                                + "claim that a file was created, modified, fixed, or updated. Continue "
+                                + "with a recovery strategy. If the current file already satisfies the "
+                                + "request, confirm that with read_file and explicitly report that no "
+                                + "change was required; otherwise report the concrete failure honestly.";
+                    } else if (!progress.hasSuccessfulMutation()
+                            && !progress.hasReadEvidenceAfter(mutationGuardStep)) {
+                        String failure = "Workspace modification failed: no write operation succeeded "
+                                + "and no current file read confirmed that a change was unnecessary.";
+                        return failedCompletion(
+                                runId, task, steps, content, "MUTATION_FAILURE_FINAL", failure,
+                                runStartedAt, runStartedNanos, progress.plan()
+                        );
+                    } else if (progress.verificationRequired()
+                            && !progress.postMutationReadSeen()
+                            && postMutationReadGuards < 1) {
+                        postMutationReadGuards++;
+                        feedback = "POST_MUTATION_READ_GUARD: A workspace mutation succeeded, but the "
+                                + "changed file has not been reread after the mutation. Read the exact "
+                                + "changed file before claiming completion.";
+                    } else if (progress.verificationRequired()
+                            && !progress.postMutationReadSeen()) {
+                        String failure = "Workspace modification was written but post-edit verification "
+                                + "failed because the changed file was not reread.";
+                        return failedCompletion(
+                                runId, task, steps, content, "POST_MUTATION_READ_FAILURE", failure,
+                                runStartedAt, runStartedNanos, progress.plan()
+                        );
+                    } else if (progress.postMutationTestSeen()
+                            && Boolean.FALSE.equals(progress.postMutationTestPassed())
+                            && isTestInfrastructureFailure(progress.postMutationTestErrorCode())
+                            && infrastructureTestWarnings < 1) {
+                        infrastructureTestWarnings++;
+                        feedback = "TEST_INFRASTRUCTURE_WARNING: The changed file was reread, but Maven "
+                                + "verification could not complete because of "
+                                + progress.postMutationTestErrorCode()
+                                + ". Do not claim tests passed. Report that the change was written and "
+                                + "reread, and state the test infrastructure failure explicitly.";
+                    } else if (progress.postMutationTestSeen()
+                            && Boolean.FALSE.equals(progress.postMutationTestPassed())
+                            && !isTestInfrastructureFailure(progress.postMutationTestErrorCode())
                             && failedTestGuards < 1) {
                         failedTestGuards++;
-                        feedback = "TEST_FAILED_GUARD: The latest test execution failed. Key diagnostic: "
+                        feedback = "TEST_FAILED_GUARD: The latest post-mutation test failed. Key diagnostic: "
                                 + diagnosticOrFallback(progress)
-                                + ". Resolve this concrete failure before declaring completion; reread "
-                                + "the current source, make a targeted repair, and retest.";
+                                + ". Do not claim completion; inspect the diagnostic, reread the current "
+                                + "source, repair it, and retest.";
+                    } else if (progress.postMutationTestSeen()
+                            && Boolean.FALSE.equals(progress.postMutationTestPassed())
+                            && !isTestInfrastructureFailure(progress.postMutationTestErrorCode())) {
+                        String failure = "Workspace modification was written and reread, but verification "
+                                + "failed because the latest Maven test did not pass.";
+                        return failedCompletion(
+                                runId, task, steps, content, "TEST_VERIFICATION_FAILURE", failure,
+                                runStartedAt, runStartedNanos, progress.plan()
+                        );
+                    } else if (progress.lastMutationIsJavaSource()
+                            && mavenVerificationAvailable
+                            && !progress.postMutationTestSeen()
+                            && !Boolean.TRUE.equals(progress.postMutationTestPassed())
+                            && validationGuards < 1) {
+                        validationGuards++;
+                        feedback = "JAVA_VERIFICATION_GUARD: A Java file was changed and reread, but no "
+                                + "successful Maven test has verified the latest mutation. Run Maven tests "
+                                + "before claiming that verification passed.";
+                    } else if (progress.lastMutationIsJavaSource()
+                            && mavenVerificationAvailable
+                            && !progress.postMutationTestSeen()
+                            && !Boolean.TRUE.equals(progress.postMutationTestPassed())) {
+                        String failure = "Java workspace modification was written and reread, but no "
+                                + "successful Maven test verified the latest mutation.";
+                        return failedCompletion(
+                                runId, task, steps, content, "JAVA_VERIFICATION_FAILURE", failure,
+                                runStartedAt, runStartedNanos, progress.plan()
+                        );
                     } else if (planningEnabled
                             && (progress.plan() == null
                             || progress.remainingRequirementCount() > 0)
                             && planCompletionWarnings < 1) {
                         planCompletionWarnings++;
                         feedback = planCompletionFeedback(progress);
-                    } else if (progress.hasSuccessfulPatch()
-                            && !progress.hasRunTest()
-                            && validationGuards < 1) {
-                        validationGuards++;
-                        feedback = "VALIDATION_GUARD: The workspace was modified but has not been "
-                                + "validated. Use run_maven_test when applicable before declaring completion.";
                     }
                 }
                 if (feedback != null) {
@@ -305,10 +369,15 @@ public class Agent {
                 long toolStartedNanos = System.nanoTime();
                 Map<String, Object> parsedArguments = parseArguments(toolCall.arguments());
                 eventListener.toolStarted(toolCall.name(), parsedArguments);
-                ToolResult toolResult = toolRegistry.execute(
-                        toolCall.name(),
-                        toolCall.arguments()
-                );
+                String toolPath = Objects.toString(parsedArguments.get("path"), null);
+                ToolResult toolResult = isEditTool(toolCall.name())
+                        && progress.requiresRereadBeforeEdit(toolPath)
+                        ? ToolResult.failure(
+                                ToolErrorCode.STALE_EDIT_CONTEXT,
+                                "Two consecutive edits failed for " + toolPath
+                                        + "; read_file must refresh the current content before another edit"
+                        )
+                        : toolRegistry.execute(toolCall.name(), toolCall.arguments());
                 eventListener.toolFinished(toolCall.name(), toolResult);
                 steps.add(new AgentStep(
                         steps.size() + 1,
@@ -330,6 +399,17 @@ public class Agent {
                         steps.size()
                 );
                 history.add(Message.tool(toolCall.id(), serializeObservation(toolResult)));
+
+                String recoveryFeedback = editRecoveryFeedback(
+                        toolCall.name(),
+                        toolPath,
+                        toolResult,
+                        progress
+                );
+                if (recoveryFeedback != null) {
+                    steps.add(runtimeFeedbackStep(steps.size() + 1, null, recoveryFeedback));
+                    history.add(Message.system(recoveryFeedback));
+                }
 
                 if (diagnosticRecovery
                         && progress.contextActionsAfterFailure() >= 3
@@ -362,6 +442,15 @@ public class Agent {
                 } else {
                     previousFailedAction = null;
                     consecutiveIdenticalFailures = 0;
+                }
+
+                if (isSuccessfulWorkspaceMutation(toolCall.name(), toolResult)) {
+                    String feedback = "POST_MUTATION_READ_REQUIRED: A workspace write succeeded. "
+                            + "Before another write or final answer, use read_file on the changed path "
+                            + "and confirm the requested change and existing content are both intact.";
+                    steps.add(runtimeFeedbackStep(steps.size() + 1, null, feedback));
+                    history.add(Message.system(feedback));
+                    break;
                 }
             }
         }
@@ -524,6 +613,48 @@ public class Agent {
         );
     }
 
+    private static AgentRunResult failedCompletion(
+            String runId,
+            String task,
+            List<AgentStep> steps,
+            String attemptedFinalAnswer,
+            String feedbackCode,
+            String failure,
+            long runStartedAt,
+            long runStartedNanos,
+            AgentPlan plan
+    ) {
+        steps.add(runtimeFeedbackStep(
+                steps.size() + 1,
+                attemptedFinalAnswer,
+                feedbackCode + ": " + failure
+        ));
+        steps.add(new AgentStep(
+                steps.size() + 1,
+                AgentActionType.FINAL_ANSWER,
+                null,
+                null,
+                null,
+                Map.of(),
+                null,
+                failure,
+                null,
+                System.currentTimeMillis(),
+                0
+        ));
+        return result(
+                runId,
+                task,
+                steps,
+                failure,
+                TerminationReason.FINAL_ANSWER,
+                false,
+                runStartedAt,
+                runStartedNanos,
+                plan
+        );
+    }
+
     private static Map<String, Object> parseArguments(String rawArguments) {
         try {
             JsonNode parsed = OBJECT_MAPPER.readTree(rawArguments);
@@ -565,6 +696,63 @@ public class Agent {
         } catch (JsonProcessingException exception) {
             return "Tool failed [" + result.errorCode() + "]: " + result.errorMessage();
         }
+    }
+
+    private static String editRecoveryFeedback(
+            String toolName,
+            String path,
+            ToolResult result,
+            AgentProgress progress
+    ) {
+        if (result.success() || result.errorCode() == null) {
+            return null;
+        }
+        String target = path == null || path.isBlank() ? "the target file" : path;
+        String rereadRequirement = progress.requiresRereadBeforeEdit(path)
+                ? " Two consecutive edits have failed for this file; read_file is required before another edit."
+                : "";
+        if ("apply_patch".equals(toolName) || "replace_lines".equals(toolName)) {
+            return switch (result.errorCode()) {
+                case INVALID_ARGUMENTS -> "EDIT_RECOVERY_INVALID_ARGUMENTS: The edit arguments are invalid. "
+                        + "Do not retry them unchanged. Read " + target + " again, then use a real, non-empty, "
+                        + "unique oldText anchor. For insertion, replace the anchor with the anchor plus the "
+                        + "new content." + rereadRequirement;
+                case TEXT_NOT_FOUND -> "EDIT_RECOVERY_TEXT_NOT_FOUND: The requested oldText is not present in "
+                        + target + ". Use read_file to obtain the latest content before constructing a new patch; "
+                        + "do not repeat the same oldText." + rereadRequirement;
+                case NO_EFFECT_CHANGE -> "EDIT_RECOVERY_NO_EFFECT_CHANGE: oldText and newText produced no content "
+                        + "change in " + target + ". Do not submit the same patch again; re-check the current file "
+                        + "and the requested outcome." + rereadRequirement;
+                case STALE_EDIT_CONTEXT, INVALID_LINE_RANGE -> "EDIT_RECOVERY_STALE_CONTEXT: The edit context for "
+                        + target + " is stale or invalid. Use read_file before another edit and rebuild the edit "
+                        + "from the current content." + rereadRequirement;
+                default -> null;
+            };
+        }
+        if ("create_file".equals(toolName)
+                && result.errorCode() == ToolErrorCode.FILE_ALREADY_EXISTS) {
+            return "CREATE_RECOVERY_FILE_EXISTS: " + target + " already exists. Do not retry create_file. "
+                    + "Read the existing file, then use apply_patch only if a change is still required.";
+        }
+        return null;
+    }
+
+    private static boolean isEditTool(String toolName) {
+        return "apply_patch".equals(toolName) || "replace_lines".equals(toolName);
+    }
+
+    private static boolean isSuccessfulWorkspaceMutation(String toolName, ToolResult result) {
+        return ("apply_patch".equals(toolName)
+                || "replace_lines".equals(toolName)
+                || "create_file".equals(toolName))
+                && result.success()
+                && Boolean.TRUE.equals(result.metadata().get("changed"));
+    }
+
+    private static boolean isTestInfrastructureFailure(ToolErrorCode errorCode) {
+        return errorCode == ToolErrorCode.PROCESS_START_FAILED
+                || errorCode == ToolErrorCode.PROCESS_TIMEOUT
+                || errorCode == ToolErrorCode.TOOL_EXECUTION_ERROR;
     }
 
     private static String diagnosticOrFallback(AgentProgress progress) {

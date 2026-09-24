@@ -34,6 +34,12 @@ public final class ConsoleUi implements AgentEventListener {
         output.flush();
     }
 
+    /** Ensures a blank submission does not cause two prompts to share one output line. */
+    public void finishEmptyInput() {
+        output.println();
+        output.flush();
+    }
+
     public void printAgentMessage(String message) {
         output.println("Agent >");
         output.println(message == null ? "" : message);
@@ -82,7 +88,8 @@ public final class ConsoleUi implements AgentEventListener {
     private static String summarize(String toolName, Map<String, Object> arguments) {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
         return switch (toolName) {
-            case "list_files", "read_file", "apply_patch" -> quoted(safeArguments.get("path"));
+            case "list_files", "read_file", "apply_patch", "create_file" ->
+                    quoted(safeArguments.get("path"));
             case "search_code" -> quoted(first(safeArguments, "keyword", "query"));
             case "replace_lines" -> lineRange(safeArguments);
             case "run_maven_test" -> testSelector(safeArguments);
