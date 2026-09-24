@@ -10,8 +10,11 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,7 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-public class GlmClient implements LLMClient {
+public class GlmClient implements StreamingLlmClient {
     private static final String API_KEY_ENV = "GLM_API_KEY";
     private static final String DEBUG_ENV = "GLM_DEBUG";
     private static final String DEFAULT_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
@@ -52,22 +55,7 @@ public class GlmClient implements LLMClient {
 
     @Override
     public LLMResponse chat(List<Message> messages, List<ToolDefinition> tools) throws IOException {
-        Objects.requireNonNull(messages, "messages must not be null");
-        Objects.requireNonNull(tools, "tools must not be null");
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("model", model);
-        payload.put("messages", List.copyOf(messages));
-        if (!tools.isEmpty()) {
-            payload.put("tools", tools.stream().map(GlmClient::serializeTool).toList());
-        }
-
-        String json = objectMapper.writeValueAsString(payload);
-        Request request = new Request.Builder()
-                .url(endpoint)
-                .header("Authorization", "Bearer " + apiKey)
-                .post(RequestBody.create(json, JSON))
-                .build();
+        Request request = buildRequest(messages, tools, false);
 
         try (Response response = httpClient.newCall(request).execute()) {
             if (isDebugEnabled()) {
@@ -84,6 +72,98 @@ public class GlmClient implements LLMClient {
             }
             return parseResponse(responseJson);
         }
+    }
+
+    @Override
+    public LLMResponse stream(
+            List<Message> messages,
+            List<ToolDefinition> tools,
+            LlmStreamListener listener
+    ) throws IOException {
+        Objects.requireNonNull(listener, "listener must not be null");
+        Request request = buildRequest(messages, tools, true);
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (isDebugEnabled()) {
+                System.out.println("GLM HTTP status: " + response.code());
+            }
+            ResponseBody body = response.body();
+            if (!response.isSuccessful()) {
+                String errorBody = body == null ? "" : body.string();
+                System.err.println("GLM error body: " + errorBody);
+                throw new IOException("GLM streaming request failed with HTTP " + response.code()
+                        + ": " + errorBody);
+            }
+            if (body == null) {
+                throw new IOException("GLM returned an empty streaming response body");
+            }
+            StreamingResponseAccumulator accumulator =
+                    new StreamingResponseAccumulator(objectMapper, listener);
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    body.byteStream(), StandardCharsets.UTF_8))) {
+                StringBuilder eventData = new StringBuilder();
+                String line;
+                boolean done = false;
+                while (!done && (line = reader.readLine()) != null) {
+                    if (line.isEmpty()) {
+                        done = processEvent(eventData, accumulator);
+                    } else if (line.startsWith("data:")) {
+                        if (!eventData.isEmpty()) {
+                            eventData.append('\n');
+                        }
+                        eventData.append(line.substring(5).stripLeading());
+                    }
+                }
+                if (!done && !eventData.isEmpty()) {
+                    processEvent(eventData, accumulator);
+                }
+            }
+            return accumulator.finish();
+        }
+    }
+
+    private Request buildRequest(
+            List<Message> messages,
+            List<ToolDefinition> tools,
+            boolean streaming
+    ) throws IOException {
+        Objects.requireNonNull(messages, "messages must not be null");
+        Objects.requireNonNull(tools, "tools must not be null");
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("model", model);
+        payload.put("messages", List.copyOf(messages));
+        if (streaming) {
+            payload.put("stream", true);
+        }
+        if (!tools.isEmpty()) {
+            payload.put("tools", tools.stream().map(GlmClient::serializeTool).toList());
+        }
+
+        String json = objectMapper.writeValueAsString(payload);
+        Request.Builder builder = new Request.Builder()
+                .url(endpoint)
+                .header("Authorization", "Bearer " + apiKey)
+                .post(RequestBody.create(json, JSON));
+        if (streaming) {
+            builder.header("Accept", "text/event-stream");
+        }
+        return builder.build();
+    }
+
+    private static boolean processEvent(
+            StringBuilder eventData,
+            StreamingResponseAccumulator accumulator
+    ) throws IOException {
+        if (eventData.isEmpty()) {
+            return false;
+        }
+        String data = eventData.toString();
+        eventData.setLength(0);
+        if ("[DONE]".equals(data)) {
+            return true;
+        }
+        accumulator.accept(data);
+        return false;
     }
 
     private static Map<String, Object> serializeTool(ToolDefinition tool) {

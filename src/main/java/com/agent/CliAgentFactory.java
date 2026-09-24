@@ -88,7 +88,8 @@ public final class CliAgentFactory {
                 TaskMode.READ_ONLY,
                 false,
                 false,
-                Objects.requireNonNull(eventListener, "eventListener must not be null")
+                Objects.requireNonNull(eventListener, "eventListener must not be null"),
+                true
         );
     }
 
@@ -105,7 +106,8 @@ public final class CliAgentFactory {
                 TaskMode.READ_ONLY,
                 false,
                 false,
-                Objects.requireNonNull(eventListener, "eventListener must not be null")
+                Objects.requireNonNull(eventListener, "eventListener must not be null"),
+                true
         );
     }
 
@@ -128,7 +130,8 @@ public final class CliAgentFactory {
                 TaskMode.CODE_MODIFICATION,
                 true,
                 false,
-                Objects.requireNonNull(eventListener, "eventListener must not be null")
+                Objects.requireNonNull(eventListener, "eventListener must not be null"),
+                true
         );
     }
 

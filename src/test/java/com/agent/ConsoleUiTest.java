@@ -73,6 +73,32 @@ class ConsoleUiTest {
         assertFalse(output.contains(newText));
     }
 
+    @Test
+    void appendsStreamingTextWithoutAddingChunkNewlines() {
+        CapturedUi captured = capturedUi();
+
+        captured.ui().assistantMessageStarted();
+        captured.ui().assistantTextDelta("Java");
+        captured.ui().assistantTextDelta(" 是");
+        captured.ui().assistantTextDelta("语言\n第二行");
+        captured.ui().assistantMessageFinished();
+
+        assertTrue(captured.text().contains("Agent > Java 是语言\n第二行"));
+    }
+
+    @Test
+    void toolStatusStartsOnASeparateLineAfterStreamedTextFinishes() {
+        CapturedUi captured = capturedUi();
+
+        captured.ui().assistantMessageStarted();
+        captured.ui().assistantTextDelta("我先读取。");
+        captured.ui().assistantMessageFinished();
+        captured.ui().toolStarted("read_file", Map.of("path", "README.md"));
+
+        String normalized = captured.text().replace("\r\n", "\n");
+        assertTrue(normalized.contains("Agent > 我先读取。\n\nTool > read_file"));
+    }
+
     private static CapturedUi capturedUi() {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         return new CapturedUi(

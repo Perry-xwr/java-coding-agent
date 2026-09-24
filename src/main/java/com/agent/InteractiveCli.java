@@ -65,8 +65,20 @@ public final class InteractiveCli {
                 ui.printSystemMessage(activeMode + " history cleared.");
                 continue;
             }
-            ui.printAgentMessage(sessions.session(activeMode).run(line));
+            try {
+                sessions.session(activeMode).run(line);
+            } catch (IOException exception) {
+                ui.printSystemMessage("LLM streaming failed: " + safeMessage(exception));
+            }
         }
+    }
+
+    private static String safeMessage(IOException exception) {
+        String message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            return exception.getClass().getSimpleName();
+        }
+        return message.replaceAll("(?i)Bearer\\s+\\S+", "Bearer [REDACTED]");
     }
 
     private void switchMode(CliMode mode) {

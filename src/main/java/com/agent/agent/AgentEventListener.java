@@ -13,4 +13,13 @@ public interface AgentEventListener {
 
     default void toolFinished(String toolName, ToolResult result) {
     }
+
+    default void assistantMessageStarted() {
+    }
+
+    default void assistantTextDelta(String delta) {
+    }
+
+    default void assistantMessageFinished() {
+    }
 }

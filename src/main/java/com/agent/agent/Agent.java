@@ -4,6 +4,7 @@ import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
+import com.agent.llm.StreamingLlmClient;
 import com.agent.tool.ToolResult;
 import com.agent.tool.ToolErrorCode;
 import com.agent.tool.ToolRegistry;
@@ -35,6 +36,7 @@ public class Agent {
     private final boolean diagnosticRecovery;
     private final boolean planningEnabled;
     private final AgentEventListener eventListener;
+    private final boolean streamingEnabled;
     private final List<Message> history = new ArrayList<>();
 
     public Agent(LLMClient llmClient, ToolRegistry toolRegistry) {
@@ -86,7 +88,7 @@ public class Agent {
             boolean planningEnabled
     ) {
         this(llmClient, toolRegistry, systemPrompt, maxIterations, taskMode,
-                diagnosticRecovery, planningEnabled, AgentEventListener.NO_OP);
+                diagnosticRecovery, planningEnabled, AgentEventListener.NO_OP, false);
     }
 
     public Agent(
@@ -99,6 +101,21 @@ public class Agent {
             boolean planningEnabled,
             AgentEventListener eventListener
     ) {
+        this(llmClient, toolRegistry, systemPrompt, maxIterations, taskMode,
+                diagnosticRecovery, planningEnabled, eventListener, false);
+    }
+
+    public Agent(
+            LLMClient llmClient,
+            ToolRegistry toolRegistry,
+            String systemPrompt,
+            int maxIterations,
+            TaskMode taskMode,
+            boolean diagnosticRecovery,
+            boolean planningEnabled,
+            AgentEventListener eventListener,
+            boolean streamingEnabled
+    ) {
         this.llmClient = Objects.requireNonNull(llmClient, "llmClient must not be null");
         this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry must not be null");
         if (maxIterations < 1) {
@@ -109,6 +126,7 @@ public class Agent {
         this.diagnosticRecovery = diagnosticRecovery;
         this.planningEnabled = planningEnabled;
         this.eventListener = Objects.requireNonNull(eventListener, "eventListener must not be null");
+        this.streamingEnabled = streamingEnabled;
         this.systemMessage = Message.system(
                 Objects.requireNonNull(systemPrompt, "systemPrompt must not be null")
         );
@@ -173,10 +191,7 @@ public class Agent {
             long llmStartedNanos = System.nanoTime();
             LLMResponse response;
             try {
-                response = llmClient.chat(
-                        decisionMessages(progress),
-                        toolRegistry.definitions()
-                );
+                response = completeDecision(decisionMessages(progress));
             } catch (IOException exception) {
                 steps.add(new AgentStep(
                         steps.size() + 1,
@@ -376,6 +391,36 @@ public class Agent {
                 runStartedNanos,
                 progress.plan()
         );
+    }
+
+    private LLMResponse completeDecision(List<Message> messages) throws IOException {
+        if (!streamingEnabled) {
+            return llmClient.chat(messages, toolRegistry.definitions());
+        }
+        boolean[] started = {false};
+        try {
+            if (llmClient instanceof StreamingLlmClient streamingClient) {
+                return streamingClient.stream(messages, toolRegistry.definitions(), delta -> {
+                    if (!started[0]) {
+                        started[0] = true;
+                        eventListener.assistantMessageStarted();
+                    }
+                    eventListener.assistantTextDelta(delta);
+                });
+            }
+            LLMResponse response = llmClient.chat(messages, toolRegistry.definitions());
+            String content = response.content();
+            if (content != null && !content.isEmpty()) {
+                started[0] = true;
+                eventListener.assistantMessageStarted();
+                eventListener.assistantTextDelta(content);
+            }
+            return response;
+        } finally {
+            if (started[0]) {
+                eventListener.assistantMessageFinished();
+            }
+        }
     }
 
     public List<Message> history() {

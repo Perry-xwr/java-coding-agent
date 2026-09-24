@@ -40,6 +40,25 @@ public final class ConsoleUi implements AgentEventListener {
         output.println();
     }
 
+    @Override
+    public void assistantMessageStarted() {
+        output.print("Agent > ");
+        output.flush();
+    }
+
+    @Override
+    public void assistantTextDelta(String delta) {
+        output.print(delta);
+        output.flush();
+    }
+
+    @Override
+    public void assistantMessageFinished() {
+        output.println();
+        output.println();
+        output.flush();
+    }
+
     public void printSystemMessage(String message) {
         output.println("System > " + message);
     }
