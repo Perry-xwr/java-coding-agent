@@ -33,17 +33,22 @@ class PlanningProgressTest {
                 response(plan(false, false, false), call("p1", "apply_patch", patch(
                         "MaxFinder.java", "int max = 0;", "int max = Integer.MIN_VALUE;"
                 ))),
+                response("", call("read-1", "read_file",
+                        "{\"path\":\"MaxFinder.java\"}")),
+                response("", call("test-1", "run_maven_test", "{}")),
                 answer("Done too early"),
                 response(plan(true, true, false), call("p2", "apply_patch", patch(
                         "MaxFinder.java", "int max = Integer.MIN_VALUE;",
                         "if (values.length == 0) throw new IllegalArgumentException();\n"
                                 + "int max = Integer.MIN_VALUE;"
                 ))),
+                response("", call("read", "read_file",
+                        "{\"path\":\"MaxFinder.java\"}")),
                 response(plan(true, true, true), call("t1", "run_maven_test", "{}")),
                 answer("Done")
         ));
 
-        AgentRunResult result = planningAgent(client, passingRunner(), 6)
+        AgentRunResult result = planningAgent(client, passingRunner(), 8)
                 .runWithTrajectory("Fix negatives and reject empty arrays");
 
         assertEquals("Done", result.finalAnswer());
@@ -63,13 +68,16 @@ class PlanningProgressTest {
         write("App.java", "A B\n");
         CapturingClient client = client(List.of(
                 response(plan(false, false, false),
-                        call("p1", "apply_patch", patch("App.java", "A", "A1")),
+                        call("p1", "apply_patch", patch("App.java", "A", "A1"))),
+                response(plan(true, false, false),
                         call("p2", "apply_patch", patch("App.java", "B", "B2"))),
+                response(plan(true, true, false), call("read", "read_file",
+                        "{\"path\":\"App.java\"}")),
                 response(plan(true, true, true), call("t1", "run_maven_test", "{}")),
                 answer("Complete")
         ));
 
-        AgentRunResult result = planningAgent(client, passingRunner(), 4)
+        AgentRunResult result = planningAgent(client, passingRunner(), 6)
                 .runWithTrajectory("Complete two changes and validate");
 
         assertEquals("Complete", result.finalAnswer());
@@ -84,12 +92,14 @@ class PlanningProgressTest {
                 response(plan(false, false, false), call("p1", "apply_patch", patch(
                         "App.java", "old", "partial"
                 ))),
+                response(plan(true, false, false), call("read", "read_file",
+                        "{\"path\":\"App.java\"}")),
                 response(plan(true, false, false), call("t1", "run_maven_test", "{}")),
                 answer("Visible test passed"),
                 answer(plan(true, true, true) + "Complete")
         ));
 
-        AgentRunResult result = planningAgent(client, passingRunner(), 5)
+        AgentRunResult result = planningAgent(client, passingRunner(), 6)
                 .runWithTrajectory("Satisfy both behaviors");
 
         assertEquals(1, count(result, AgentActionType.PLAN_COMPLETION_FEEDBACK));
@@ -108,15 +118,21 @@ class PlanningProgressTest {
                 response(twoRequirementPlan(false, false), call("p1", "apply_patch", patch(
                         "App.java", "old", "first"
                 ))),
+                response(twoRequirementPlan(true, false), call("read-1", "read_file",
+                        "{\"path\":\"App.java\"}")),
                 response(twoRequirementPlan(true, false), call("t1", "run_maven_test", "{}")),
+                response(planWithR3(), call("read-after-failure", "read_file",
+                        "{\"path\":\"App.java\"}")),
                 response(planWithR3(), call("p2", "apply_patch", patch(
                         "App.java", "first", "null-safe"
                 ))),
+                response(completedPlanWithR3(), call("read-2", "read_file",
+                        "{\"path\":\"App.java\"}")),
                 response(completedPlanWithR3(), call("t2", "run_maven_test", "{}")),
                 answer("Complete")
         ));
 
-        AgentRunResult result = planningAgent(client, runner, 6)
+        AgentRunResult result = planningAgent(client, runner, 9)
                 .runWithTrajectory("Fix behavior and respond to discovered failures");
 
         assertEquals(3, result.trajectory().plan().requirements().size());
@@ -148,12 +164,14 @@ class PlanningProgressTest {
                 response(plan(false, false, false), call("p1", "apply_patch", patch(
                         "App.java", "old", "partial"
                 ))),
+                response(plan(true, false, false), call("read", "read_file",
+                        "{\"path\":\"App.java\"}")),
                 response(plan(true, false, false), call("t1", "run_maven_test", "{}")),
                 answer("Final one"),
                 answer("Final two")
         ));
 
-        AgentRunResult result = planningAgent(client, passingRunner(), 4)
+        AgentRunResult result = planningAgent(client, passingRunner(), 5)
                 .runWithTrajectory("Two requirements");
 
         assertEquals("Final two", result.finalAnswer());

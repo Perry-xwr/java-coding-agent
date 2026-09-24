@@ -33,9 +33,11 @@ Agent Run → Trajectory → Hidden Evaluator → Metrics → Failure Analysis
 ## Key Features
 
 - ReAct-style multi-step Agent loop and function calling
+- Interactive `CHAT` / `READ` / `CODE` modes with streamed model output
 - Workspace confinement with traversal and symlink-escape rejection
-- Repository inspection, exact code editing, and controlled Maven testing
+- Repository inspection, safe new-file creation, exact code editing, and controlled Maven testing
 - Compiler/test diagnostic parsing and bounded recovery behavior
+- Post-edit evidence gates: reread changed files and require Maven evidence for Java changes
 - Typed `ToolResult` observations and error codes
 - Structured Agent trajectories for reproducible analysis
 - Isolated benchmark fixtures with hidden deterministic evaluation
@@ -49,6 +51,7 @@ Agent Run → Trajectory → Hidden Evaluator → Metrics → Failure Analysis
 | `read_file` | Read UTF-8 source files |
 | `search_code` | Search code with relative paths and line numbers |
 | `apply_patch` | Apply an exact, single-match edit to an existing file |
+| `create_file` | Create one new UTF-8 text file without overwriting an existing path |
 | `run_maven_test` | Run controlled Maven validation with optional test selection |
 | `replace_lines` | Experimental guarded line-based editing; not part of the V1 default strategy |
 
@@ -98,7 +101,9 @@ mvn test
 mvn exec:java '-Dexec.mainClass=com.agent.Main'
 ```
 
-The CLI accepts normal questions and coding/repository tasks. Enter `clear` to reset conversation history while retaining the system message. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
+The CLI starts in `CHAT` mode. Use `/read` for repository inspection and `/code` for workspace modifications; output is streamed as it arrives. In `CODE`, successful writes must be reread before completion, and Java changes require a successful Maven test when the tool is available. Enter `clear` to reset the active mode's conversation history while retaining its system message. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
+
+For pasted multi-line prompts, normal paste capture is supported. `/begin` followed by `/end` remains the reliable explicit fallback when terminal input timing is ambiguous.
 
 Ordinary `mvn test` is deterministic and does not call GLM. The live smoke test is opt-in through `mvn test -Pglm-integration`.
 
@@ -130,6 +135,10 @@ Supported baseline values include `react`, `react_action_oriented`, `react_diagn
 - Java/Maven task scope rather than arbitrary repositories
 - No arbitrary shell or unrestricted file write/delete
 - Refactoring and recovery after compiler/test failures remain weak
+- Post-edit evidence does not guarantee semantic correctness of an edit
+- Streamed intermediate model text can appear before a final structured failure state
+- Automatic multi-line paste capture is timing-sensitive; `/begin` and `/end` are the reliable fallback
+- Automatic task routing is not implemented; select `CHAT`, `READ`, or `CODE` explicitly
 - No Multi-Agent system, persistent Memory, or Agentic RL in V1
 
 ## Roadmap

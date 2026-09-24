@@ -154,7 +154,6 @@ public final class ApplyPatchTool implements Tool {
                     successMetadata
             );
         }
-
         try {
             fileWriter.write(target, updated);
             return ToolResult.success("Patched " + path, successMetadata);

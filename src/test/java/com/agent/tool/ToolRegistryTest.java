@@ -49,6 +49,22 @@ class ToolRegistryTest {
     }
 
     @Test
+    void cliCodingRegistryAddsCreateFileWithoutExposingItToReadOnlyRegistry() {
+        com.agent.tool.execution.ProcessRunner runner =
+                (command, directory, timeout, maxOutput) ->
+                        new com.agent.tool.execution.ProcessExecutionResult(
+                                0, false, "BUILD SUCCESS", false, 1
+                        );
+        ToolRegistry code = ToolRegistry.withCliCodingTools(
+                tempDir, runner, tempDir.resolve(".m2/repository")
+        );
+        ToolRegistry read = ToolRegistry.withFileTools(tempDir);
+
+        assertEquals("create_file", code.getTool("create_file").name());
+        assertThrows(IllegalArgumentException.class, () -> read.getTool("create_file"));
+    }
+
+    @Test
     void preciseEditRegistryAddsLineEditorWithoutChangingExistingCodingRegistry() {
         com.agent.tool.execution.ProcessRunner runner =
                 (command, directory, timeout, maxOutput) ->

@@ -4,9 +4,11 @@ import com.agent.tool.ToolResult;
 import com.agent.tool.ToolErrorCode;
 
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class AgentProgress {
-    private boolean successfulPatch;
+    private boolean workspaceMutationSucceeded;
     private boolean runTest;
     private Boolean lastTestPassed;
     private boolean lastToolFailed;
@@ -17,6 +19,17 @@ public final class AgentProgress {
     private int contextActionsAfterFailure;
     private int noEffectPatchCount;
     private int rereadAfterFailureCount;
+    private int lastMutationFailureStep;
+    private int lastSuccessfulReadStep;
+    private boolean verificationRequired;
+    private boolean postMutationReadSeen;
+    private boolean postMutationTestSeen;
+    private Boolean postMutationTestPassed;
+    private ToolErrorCode postMutationTestErrorCode;
+    private String consecutiveEditFailurePath;
+    private int consecutiveEditFailures;
+    private String requiredRereadPath;
+    private final Set<String> successfullyReadPaths = new HashSet<>();
     private String latestDiagnosticType;
     private String latestDiagnosticSummary;
     private AgentPlan plan;
@@ -28,21 +41,53 @@ public final class AgentProgress {
             int stepIndex
     ) {
         lastToolFailed = !result.success();
-        if (isEditTool(toolName)
+        if (isWorkspaceMutationTool(toolName)
                 && result.errorCode() == ToolErrorCode.NO_EFFECT_CHANGE) {
             noEffectPatchCount++;
         }
-        if (isEditTool(toolName)
-                && result.success()
+        if (result.success()
                 && Boolean.TRUE.equals(result.metadata().get("changed"))) {
-            successfulPatch = true;
+            workspaceMutationSucceeded = true;
             lastModifiedFile = text(arguments.get("path"));
             lastPatchStep = stepIndex;
+            verificationRequired = true;
+            postMutationReadSeen = false;
+            postMutationTestSeen = false;
+            postMutationTestPassed = null;
+            postMutationTestErrorCode = null;
             contextActionsAfterFailure = 0;
+        }
+        if (isWorkspaceMutationTool(toolName) && !result.success()) {
+            lastMutationFailureStep = stepIndex;
+        }
+        if (isEditTool(toolName)) {
+            observeEditAttempt(text(arguments.get("path")), result);
+        }
+        if ("read_file".equals(toolName) && result.success()) {
+            String path = text(arguments.get("path"));
+            if (path != null) {
+                successfullyReadPaths.add(path);
+                lastSuccessfulReadStep = stepIndex;
+                if (verificationRequired
+                        && stepIndex > lastPatchStep
+                        && path.equals(lastModifiedFile)) {
+                    postMutationReadSeen = true;
+                }
+                if (path.equals(requiredRereadPath)) {
+                    requiredRereadPath = null;
+                    consecutiveEditFailures = 0;
+                    consecutiveEditFailurePath = null;
+                }
+            }
         }
         if ("run_maven_test".equals(toolName)) {
             runTest = true;
             lastTestPassed = result.success();
+            if (verificationRequired && stepIndex > lastPatchStep) {
+                postMutationTestSeen = true;
+                postMutationTestPassed = result.success();
+                postMutationTestErrorCode = result.errorCode();
+            }
             if (!result.success() && result.errorCode() == ToolErrorCode.TEST_FAILED) {
                 lastTestFailureStep = stepIndex;
                 rereadModifiedFileAfterFailure = false;
@@ -64,7 +109,53 @@ public final class AgentProgress {
     }
 
     public boolean hasSuccessfulPatch() {
-        return successfulPatch;
+        return workspaceMutationSucceeded;
+    }
+
+    public boolean hasSuccessfulMutation() {
+        return workspaceMutationSucceeded;
+    }
+
+    public boolean hasReadEvidenceForNoChange() {
+        return !successfullyReadPaths.isEmpty()
+                && lastSuccessfulReadStep >= lastMutationFailureStep;
+    }
+
+    public boolean hasReadEvidenceAfter(int stepIndex) {
+        return !successfullyReadPaths.isEmpty() && lastSuccessfulReadStep > stepIndex;
+    }
+
+    public boolean verificationRequired() {
+        return verificationRequired;
+    }
+
+    public boolean postMutationReadSeen() {
+        return postMutationReadSeen;
+    }
+
+    public boolean postMutationTestSeen() {
+        return postMutationTestSeen;
+    }
+
+    public Boolean postMutationTestPassed() {
+        return postMutationTestPassed;
+    }
+
+    public ToolErrorCode postMutationTestErrorCode() {
+        return postMutationTestErrorCode;
+    }
+
+    public boolean lastMutationIsJavaSource() {
+        return lastModifiedFile != null
+                && lastModifiedFile.toLowerCase(java.util.Locale.ROOT).endsWith(".java");
+    }
+
+    public boolean requiresRereadBeforeEdit(String path) {
+        return requiredRereadPath != null && requiredRereadPath.equals(path);
+    }
+
+    public String requiredRereadPath() {
+        return requiredRereadPath;
     }
 
     public boolean hasRunTest() {
@@ -164,7 +255,34 @@ public final class AgentProgress {
         return value == null ? null : value.toString();
     }
 
+    private void observeEditAttempt(String path, ToolResult result) {
+        if (result.success()) {
+            consecutiveEditFailurePath = null;
+            consecutiveEditFailures = 0;
+            requiredRereadPath = null;
+            return;
+        }
+        if (path == null) {
+            return;
+        }
+        if (path.equals(consecutiveEditFailurePath)) {
+            consecutiveEditFailures++;
+        } else {
+            consecutiveEditFailurePath = path;
+            consecutiveEditFailures = 1;
+        }
+        if (consecutiveEditFailures >= 2) {
+            requiredRereadPath = path;
+        }
+    }
+
     private static boolean isEditTool(String toolName) {
         return "apply_patch".equals(toolName) || "replace_lines".equals(toolName);
+    }
+
+    private static boolean isWorkspaceMutationTool(String toolName) {
+        return "apply_patch".equals(toolName)
+                || "replace_lines".equals(toolName)
+                || "create_file".equals(toolName);
     }
 }

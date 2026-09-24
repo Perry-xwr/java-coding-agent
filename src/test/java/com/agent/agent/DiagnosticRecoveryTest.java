@@ -40,6 +40,7 @@ class DiagnosticRecoveryTest {
                         "package bench;",
                         "package bench;\nimport java.util.Objects;"
                 )),
+                call("read-after-patch", "read_file", "{\"path\":\"Matcher.java\"}"),
                 call("test-2", "run_maven_test", "{}"),
                 answer("Imported and verified.")
         ));
@@ -69,9 +70,11 @@ class DiagnosticRecoveryTest {
         Path source = Files.writeString(workspace.resolve("Range.java"), "class Range { int sum(){ return 1; } }");
         RecordingFakeLLM llm = new RecordingFakeLLM(List.of(
                 call("patch-bad", "apply_patch", patch("Range.java", "return 1;", "return 1; {")),
+                call("read-bad", "read_file", "{\"path\":\"Range.java\"}"),
                 call("test-fail", "run_maven_test", "{}"),
                 call("read-current", "read_file", "{\"path\":\"Range.java\"}"),
                 call("patch-fix", "apply_patch", patch("Range.java", "return 1; {", "return 1;")),
+                call("read-fixed", "read_file", "{\"path\":\"Range.java\"}"),
                 call("test-pass", "run_maven_test", "{}"),
                 answer("Syntax repaired and verified.")
         ));
@@ -96,8 +99,10 @@ class DiagnosticRecoveryTest {
         Files.writeString(workspace.resolve("App.java"), "old");
         RecordingFakeLLM llm = new RecordingFakeLLM(List.of(
                 call("patch-1", "apply_patch", patch("old", "broken")),
+                call("read-after-first", "read_file", "{\"path\":\"App.java\"}"),
                 call("test-1", "run_maven_test", "{}"),
                 call("patch-2", "apply_patch", patch("broken", "fixed")),
+                call("read-after-second", "read_file", "{\"path\":\"App.java\"}"),
                 call("test-2", "run_maven_test", "{}"),
                 answer("Recovered.")
         ));
@@ -148,7 +153,9 @@ class DiagnosticRecoveryTest {
 
         assertEquals(1, feedbackCount(result, "STEP_BUDGET_WARNING:"));
         assertEquals(1, feedbackCount(result, "PREMATURE_FINAL_GUARD:"));
-        assertEquals("Stopping.", result.finalAnswer());
+        assertEquals("Workspace modification failed: no write operation succeeded "
+                + "and no current file read confirmed that a change was unnecessary.", result.finalAnswer());
+        assertFalse(result.trajectory().completed());
     }
 
     @Test
@@ -156,11 +163,13 @@ class DiagnosticRecoveryTest {
         Files.writeString(workspace.resolve("App.java"), "old");
         RecordingFakeLLM llm = new RecordingFakeLLM(List.of(
                 call("patch-bad", "apply_patch", patch("old", "broken")),
+                call("read-after-patch", "read_file", "{\"path\":\"App.java\"}"),
                 call("test-fail", "run_maven_test", "{}"),
                 call("read", "read_file", "{\"path\":\"App.java\"}"),
                 call("search-1", "search_code", "{\"keyword\":\"broken\"}"),
                 call("search-2", "search_code", "{\"keyword\":\"class\"}"),
                 call("patch-fix", "apply_patch", patch("broken", "fixed")),
+                call("read-fixed", "read_file", "{\"path\":\"App.java\"}"),
                 call("test-pass", "run_maven_test", "{}"),
                 answer("Recovered.")
         ));

@@ -46,6 +46,7 @@ class CodingLoopTest {
                         "apply_patch",
                         "{\"path\":\"Calculator.java\",\"oldText\":\"a - b\",\"newText\":\"a + b\"}"
                 ),
+                toolResponse("read-after-patch", "read_file", "{\"path\":\"Calculator.java\"}"),
                 toolResponse("test", "run_maven_test", "{\"testClass\":\"CalculatorTest\"}"),
                 new LLMResponse("Fixed and tested.", List.of())
         ));
@@ -56,11 +57,14 @@ class CodingLoopTest {
         assertEquals("Fixed and tested.", result.finalAnswer());
         assertTrue(Files.readString(source).contains("a + b"));
         assertEquals(
-                List.of("read_file", "apply_patch", "run_maven_test"),
+                List.of("read_file", "apply_patch", "read_file", "run_maven_test"),
                 toolNames(result.trajectory())
         );
-        assertTrue(result.trajectory().steps().get(1).toolResult().success());
-        assertTrue(result.trajectory().steps().get(2).toolResult().success());
+        List<AgentStep> toolSteps = result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.TOOL_CALL)
+                .toList();
+        assertTrue(toolSteps.get(1).toolResult().success());
+        assertTrue(toolSteps.get(3).toolResult().success());
         assertEquals(TerminationReason.FINAL_ANSWER, result.trajectory().terminationReason());
     }
 
@@ -81,12 +85,15 @@ class CodingLoopTest {
                         "apply_patch",
                         "{\"path\":\"Calculator.java\",\"oldText\":\"a - b\",\"newText\":\"a * b\"}"
                 ),
+                toolResponse("read-wrong", "read_file", "{\"path\":\"Calculator.java\"}"),
                 toolResponse("test-fail", "run_maven_test", "{\"testClass\":\"CalculatorTest\"}"),
+                toolResponse("read-after-failure", "read_file", "{\"path\":\"Calculator.java\"}"),
                 toolResponse(
                         "patch-correct",
                         "apply_patch",
                         "{\"path\":\"Calculator.java\",\"oldText\":\"a * b\",\"newText\":\"a + b\"}"
                 ),
+                toolResponse("read-correct", "read_file", "{\"path\":\"Calculator.java\"}"),
                 toolResponse("test-pass", "run_maven_test", "{\"testClass\":\"CalculatorTest\"}"),
                 new LLMResponse("Corrected after the failed test.", List.of())
         ));
@@ -101,16 +108,19 @@ class CodingLoopTest {
                 List.of(
                         "read_file",
                         "apply_patch",
+                        "read_file",
                         "run_maven_test",
+                        "read_file",
                         "apply_patch",
+                        "read_file",
                         "run_maven_test"
                 ),
                 toolNames(result.trajectory())
         );
-        assertFalse(toolSteps.get(2).toolResult().success());
-        assertEquals(ToolErrorCode.TEST_FAILED, toolSteps.get(2).toolResult().errorCode());
-        assertEquals("expected 5 but was 6", toolSteps.get(2).toolResult().output());
-        assertTrue(toolSteps.get(4).toolResult().success());
+        assertFalse(toolSteps.get(3).toolResult().success());
+        assertEquals(ToolErrorCode.TEST_FAILED, toolSteps.get(3).toolResult().errorCode());
+        assertEquals("expected 5 but was 6", toolSteps.get(3).toolResult().output());
+        assertTrue(toolSteps.get(7).toolResult().success());
         assertTrue(Files.readString(source).contains("a + b"));
         assertTrue(agent.history().stream().anyMatch(
                 message -> message.role().equals("tool")
@@ -122,10 +132,11 @@ class CodingLoopTest {
                 workspace.resolve("trajectories")
         ).write(result.trajectory());
         JsonNode json = new ObjectMapper().readTree(trajectoryFile.toFile());
-        assertEquals("TEST_FAILED", json.path("steps").get(2)
+        assertEquals("TEST_FAILED", findJsonToolStep(json, "run_maven_test", 0)
                 .path("toolResult").path("errorCode").asText());
-        assertEquals("apply_patch", json.path("steps").get(3).path("toolName").asText());
-        assertEquals("run_maven_test", json.path("steps").get(4).path("toolName").asText());
+        assertEquals("apply_patch", findJsonToolStep(json, "apply_patch", 1).path("toolName").asText());
+        assertEquals("run_maven_test", findJsonToolStep(json, "run_maven_test", 1)
+                .path("toolName").asText());
     }
 
     private static LLMResponse toolResponse(String id, String name, String arguments) {
@@ -137,6 +148,19 @@ class CodingLoopTest {
                 .filter(step -> step.actionType() == AgentActionType.TOOL_CALL)
                 .map(AgentStep::toolName)
                 .toList();
+    }
+
+    private static JsonNode findJsonToolStep(JsonNode trajectory, String toolName, int occurrence) {
+        int found = 0;
+        for (JsonNode step : trajectory.path("steps")) {
+            if (toolName.equals(step.path("toolName").asText())) {
+                if (found == occurrence) {
+                    return step;
+                }
+                found++;
+            }
+        }
+        throw new AssertionError("Missing tool step: " + toolName + " occurrence " + occurrence);
     }
 
     private static final class FakeLLMClient implements LLMClient {

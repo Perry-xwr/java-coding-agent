@@ -16,6 +16,10 @@ interface AtomicTextFileWriter {
         return AtomicTextFileWriter::writeUtf8;
     }
 
+    static AtomicTextFileWriter createUtf8() {
+        return AtomicTextFileWriter::createUtf8;
+    }
+
     private static void writeUtf8(Path target, String content) throws IOException {
         Path temporary = Files.createTempFile(target.getParent(), ".agent-edit-", ".tmp");
         try {
@@ -32,6 +36,23 @@ interface AtomicTextFileWriter {
                 );
             } catch (AtomicMoveNotSupportedException exception) {
                 Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    private static void createUtf8(Path target, String content) throws IOException {
+        Path temporary = Files.createTempFile(target.getParent(), ".agent-create-", ".tmp");
+        try {
+            try (BufferedWriter writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8)) {
+                writer.write(content);
+                writer.flush();
+            }
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, target);
             }
         } finally {
             Files.deleteIfExists(temporary);
