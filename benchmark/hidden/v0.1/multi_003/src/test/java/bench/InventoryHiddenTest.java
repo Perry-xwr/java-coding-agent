@@ -1,0 +1,2 @@
+package bench; import org.junit.jupiter.api.Test; import static org.junit.jupiter.api.Assertions.*;
+class InventoryHiddenTest { @Test void accumulatesUnits() { Inventory i=new Inventory(); i.add("A",2); i.add("A",3); i.add("B",4); assertEquals(5,i.quantity("A")); assertEquals(9,i.totalUnits()); } @Test void rejectsNegative() { assertThrows(IllegalArgumentException.class,()->new Inventory().add("A",-1)); } }

@@ -12,7 +12,7 @@ public class Main {
     public static void main(String[] args) throws IOException {
         com.agent.agent.Agent agent = new com.agent.agent.Agent(
                 new GlmClient(),
-                ToolRegistry.withFileTools(Path.of("."))
+                ToolRegistry.withCodingTools(Path.of("."))
         );
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {

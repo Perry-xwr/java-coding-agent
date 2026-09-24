@@ -1,11 +1,15 @@
 package com.agent.tool;
 
 import com.agent.llm.ToolDefinition;
+import com.agent.tool.execution.DefaultProcessRunner;
+import com.agent.tool.execution.ProcessRunner;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,16 +18,120 @@ import java.util.Objects;
 
 public class ToolRegistry {
     private final Map<String, Tool> tools = new LinkedHashMap<>();
+    private final boolean actionOrientedDescriptions;
+    private final boolean preciseEditDescriptions;
+
+    public ToolRegistry() {
+        this(false, false);
+    }
+
+    private ToolRegistry(boolean actionOrientedDescriptions) {
+        this(actionOrientedDescriptions, false);
+    }
+
+    private ToolRegistry(boolean actionOrientedDescriptions, boolean preciseEditDescriptions) {
+        this.actionOrientedDescriptions = actionOrientedDescriptions;
+        this.preciseEditDescriptions = preciseEditDescriptions;
+    }
 
     public static ToolRegistry withFileTools(Path root) {
         Objects.requireNonNull(root, "root must not be null");
 
         ToolRegistry registry = new ToolRegistry();
         ObjectMapper objectMapper = new ObjectMapper();
-        registry.register(new ListFilesAdapter(root, objectMapper));
-        registry.register(new ReadFileAdapter(root, objectMapper));
-        registry.register(new SearchCodeAdapter(root, objectMapper));
+        WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
+        registerFileTools(registry, objectMapper, pathResolver);
         return registry;
+    }
+
+    public static ToolRegistry withCodingTools(Path root) {
+        return withCodingTools(root, new DefaultProcessRunner());
+    }
+
+    public static ToolRegistry withCodingTools(Path root, ProcessRunner processRunner) {
+        Path localRepository = root.toAbsolutePath().normalize().resolve(".m2/repository");
+        return withCodingTools(root, processRunner, localRepository);
+    }
+
+    public static ToolRegistry withCodingTools(
+            Path root,
+            ProcessRunner processRunner,
+            Path localRepository
+    ) {
+        Objects.requireNonNull(root, "root must not be null");
+        Objects.requireNonNull(processRunner, "processRunner must not be null");
+        Objects.requireNonNull(localRepository, "localRepository must not be null");
+
+        ToolRegistry registry = new ToolRegistry();
+        ObjectMapper objectMapper = new ObjectMapper();
+        WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
+        registerFileTools(registry, objectMapper, pathResolver);
+        registry.register(new ApplyPatchTool(pathResolver, objectMapper));
+        registry.register(new RunMavenTestTool(
+                pathResolver.root(),
+                processRunner,
+                localRepository,
+                objectMapper
+        ));
+        return registry;
+    }
+
+    public static ToolRegistry withActionOrientedCodingTools(
+            Path root,
+            ProcessRunner processRunner,
+            Path localRepository
+    ) {
+        Objects.requireNonNull(root, "root must not be null");
+        Objects.requireNonNull(processRunner, "processRunner must not be null");
+        Objects.requireNonNull(localRepository, "localRepository must not be null");
+
+        ToolRegistry registry = new ToolRegistry(true);
+        ObjectMapper objectMapper = new ObjectMapper();
+        WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
+        registerFileTools(registry, objectMapper, pathResolver);
+        registry.register(new ApplyPatchTool(pathResolver, objectMapper));
+        registry.register(new RunMavenTestTool(
+                pathResolver.root(),
+                processRunner,
+                localRepository,
+                objectMapper
+        ));
+        return registry;
+    }
+
+    public static ToolRegistry withPreciseEditCodingTools(
+            Path root,
+            ProcessRunner processRunner,
+            Path localRepository
+    ) {
+        Objects.requireNonNull(root, "root must not be null");
+        Objects.requireNonNull(processRunner, "processRunner must not be null");
+        Objects.requireNonNull(localRepository, "localRepository must not be null");
+
+        ToolRegistry registry = new ToolRegistry(true, true);
+        ObjectMapper objectMapper = new ObjectMapper();
+        WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
+        registerFileTools(registry, objectMapper, pathResolver);
+        registry.register(new ApplyPatchTool(pathResolver, objectMapper));
+        registry.register(new ReplaceLinesTool(
+                pathResolver,
+                objectMapper,
+                AtomicTextFileWriter.utf8()
+        ));
+        registry.register(new RunMavenTestTool(
+                pathResolver.root(), processRunner, localRepository, objectMapper
+        ));
+        return registry;
+    }
+
+    private static void registerFileTools(
+            ToolRegistry registry,
+            ObjectMapper objectMapper,
+            WorkspacePathResolver pathResolver
+    ) {
+        registry.register(new ListFilesAdapter(pathResolver, objectMapper));
+        registry.register(new ReadFileAdapter(pathResolver, objectMapper));
+        registry.register(new SearchCodeAdapter(pathResolver, objectMapper));
     }
 
     public void register(Tool tool) {
@@ -42,33 +150,97 @@ public class ToolRegistry {
         return tool;
     }
 
-    public String execute(String name, String arguments) {
-        return getTool(name).execute(arguments);
+    public ToolResult execute(String name, String arguments) {
+        Tool tool = tools.get(name);
+        if (tool == null) {
+            return ToolResult.failure(ToolErrorCode.TOOL_NOT_FOUND, "Unknown tool: " + name);
+        }
+        try {
+            return Objects.requireNonNull(
+                    tool.execute(arguments),
+                    "tool result must not be null"
+            );
+        } catch (IllegalArgumentException exception) {
+            return ToolResult.failure(
+                    ToolErrorCode.INVALID_ARGUMENTS,
+                    messageOrType(exception)
+            );
+        } catch (RuntimeException exception) {
+            return ToolResult.failure(
+                    ToolErrorCode.TOOL_EXECUTION_ERROR,
+                    messageOrType(exception)
+            );
+        }
     }
 
     public List<ToolDefinition> definitions() {
         return tools.values().stream()
                 .map(tool -> new ToolDefinition(
                         tool.name(),
-                        tool.description(),
+                        description(tool),
                         tool.parameters()
                 ))
                 .toList();
     }
 
+    private String description(Tool tool) {
+        if (!actionOrientedDescriptions) {
+            return tool.description();
+        }
+        return switch (tool.name()) {
+            case "apply_patch" -> tool.description()
+                    + " This tool actually modifies an existing workspace file. Use it when the task "
+                    + "requires a code change; do not merely describe the edit in the final response. "
+                    + "After TEXT_NOT_FOUND or MULTIPLE_MATCHES, reread the file and construct a more "
+                    + (preciseEditDescriptions
+                    ? "precise patch. If exact text is unreliable or the call fails with "
+                    + "TEXT_NOT_FOUND or MULTIPLE_MATCHES, reread with line numbers and use "
+                    + "replace_lines instead of guessing oldText again."
+                    : "precise patch instead of repeating the same call.");
+            case "replace_lines" -> tool.description()
+                    + " Use it for a clear local range copied from the latest line-numbered read. "
+                    + "After STALE_EDIT_CONTEXT, reread the file and construct a fresh range edit.";
+            case "read_file" -> tool.description()
+                    + (preciseEditDescriptions
+                    ? " Set includeLineNumbers=true before replace_lines so the range and "
+                    + "expectedText come from current source."
+                    : "");
+            case "run_maven_test" -> tool.description()
+                    + " Use it after modifying Java code to verify the change. TEST_FAILED is a "
+                    + "recoverable observation: inspect its output, continue editing, and rerun the "
+                    + "relevant class or method. A proposed fix is not verified until tests pass.";
+            case "search_code" -> tool.description()
+                    + " Zero matches do not prove that code is absent; try list_files, read_file, an "
+                    + "alternate query, or another workspace-relative path.";
+            case "list_files" -> tool.description()
+                    + " Omit path or use '.' for the workspace root; do not pass a blank path.";
+            default -> tool.description();
+        };
+    }
+
     private abstract static class FileToolAdapter implements Tool {
-        protected final Path root;
+        private final WorkspacePathResolver pathResolver;
 
-        private FileToolAdapter(Path root) {
-            this.root = root;
+        private FileToolAdapter(WorkspacePathResolver pathResolver) {
+            this.pathResolver = pathResolver;
         }
 
-        protected Path resolve(String value) {
-            return root.resolve(Path.of(value)).normalize();
+        protected Path resolve(String value) throws IOException {
+            return pathResolver.resolveExisting(value);
         }
 
-        protected IllegalStateException executionFailed(IOException exception) {
-            return new IllegalStateException("Tool " + name() + " failed: " + exception.getMessage(), exception);
+        protected ToolResult failure(IOException exception) {
+            ToolErrorCode errorCode;
+            if (exception instanceof WorkspaceViolationException) {
+                errorCode = ToolErrorCode.WORKSPACE_VIOLATION;
+            } else if (exception instanceof NoSuchFileException) {
+                errorCode = ToolErrorCode.FILE_NOT_FOUND;
+            } else if (exception instanceof AccessDeniedException) {
+                errorCode = ToolErrorCode.ACCESS_DENIED;
+            } else {
+                errorCode = ToolErrorCode.TOOL_EXECUTION_ERROR;
+            }
+            return ToolResult.failure(errorCode, messageOrType(exception));
         }
     }
 
@@ -76,8 +248,8 @@ public class ToolRegistry {
         private final ListFilesTool delegate = new ListFilesTool();
         private final ObjectMapper objectMapper;
 
-        private ListFilesAdapter(Path root, ObjectMapper objectMapper) {
-            super(root);
+        private ListFilesAdapter(WorkspacePathResolver pathResolver, ObjectMapper objectMapper) {
+            super(pathResolver);
             this.objectMapper = objectMapper;
         }
 
@@ -100,13 +272,15 @@ public class ToolRegistry {
         }
 
         @Override
-        public String execute(String arguments) {
+        public ToolResult execute(String arguments) {
             try {
                 JsonNode input = parseArguments(objectMapper, arguments);
                 String path = input.path("path").asText(".");
-                return objectMapper.writeValueAsString(delegate.listFiles(resolve(path)));
+                return ToolResult.success(
+                        objectMapper.writeValueAsString(delegate.listFiles(resolve(path)))
+                );
             } catch (IOException exception) {
-                throw executionFailed(exception);
+                return failure(exception);
             }
         }
     }
@@ -115,8 +289,8 @@ public class ToolRegistry {
         private final ReadFileTool delegate = new ReadFileTool();
         private final ObjectMapper objectMapper;
 
-        private ReadFileAdapter(Path root, ObjectMapper objectMapper) {
-            super(root);
+        private ReadFileAdapter(WorkspacePathResolver pathResolver, ObjectMapper objectMapper) {
+            super(pathResolver);
             this.objectMapper = objectMapper;
         }
 
@@ -133,20 +307,47 @@ public class ToolRegistry {
         @Override
         public Map<String, Object> parameters() {
             return objectSchema(
-                    Map.of("path", stringProperty("File path relative to the workspace root.")),
+                    Map.of(
+                            "path", stringProperty("File path relative to the workspace root."),
+                            "includeLineNumbers", Map.of(
+                                    "type", "boolean",
+                                    "description", "When true, prefix observation lines with 1-based numbers."
+                            )
+                    ),
                     List.of("path")
             );
         }
 
         @Override
-        public String execute(String arguments) {
+        public ToolResult execute(String arguments) {
             try {
                 JsonNode input = parseArguments(objectMapper, arguments);
                 String path = requireNonBlank(input.path("path").asText(null), "path");
-                return delegate.readFile(resolve(path));
+                JsonNode includeLineNumbers = input.get("includeLineNumbers");
+                if (includeLineNumbers != null && !includeLineNumbers.isBoolean()) {
+                    throw new IllegalArgumentException("includeLineNumbers must be a boolean");
+                }
+                String content = delegate.readFile(resolve(path));
+                return ToolResult.success(includeLineNumbers != null && includeLineNumbers.asBoolean()
+                        ? withLineNumbers(content)
+                        : content);
             } catch (IOException exception) {
-                throw executionFailed(exception);
+                return failure(exception);
             }
+        }
+
+        private static String withLineNumbers(String content) {
+            String normalized = content.replace("\r\n", "\n").replace('\r', '\n');
+            String[] lines = normalized.split("\n", -1);
+            int count = normalized.endsWith("\n") ? lines.length - 1 : lines.length;
+            StringBuilder numbered = new StringBuilder();
+            for (int index = 0; index < count; index++) {
+                if (index > 0) {
+                    numbered.append('\n');
+                }
+                numbered.append(index + 1).append(" | ").append(lines[index]);
+            }
+            return numbered.toString();
         }
     }
 
@@ -154,8 +355,8 @@ public class ToolRegistry {
         private final SearchCodeTool delegate = new SearchCodeTool();
         private final ObjectMapper objectMapper;
 
-        private SearchCodeAdapter(Path root, ObjectMapper objectMapper) {
-            super(root);
+        private SearchCodeAdapter(WorkspacePathResolver pathResolver, ObjectMapper objectMapper) {
+            super(pathResolver);
             this.objectMapper = objectMapper;
         }
 
@@ -181,14 +382,16 @@ public class ToolRegistry {
         }
 
         @Override
-        public String execute(String arguments) {
+        public ToolResult execute(String arguments) {
             try {
                 JsonNode input = parseArguments(objectMapper, arguments);
                 String keyword = requireNonBlank(input.path("keyword").asText(null), "keyword");
                 String path = input.path("path").asText(".");
-                return objectMapper.writeValueAsString(delegate.searchCode(keyword, resolve(path)));
+                return ToolResult.success(
+                        objectMapper.writeValueAsString(delegate.searchCode(keyword, resolve(path)))
+                );
             } catch (IOException exception) {
-                throw executionFailed(exception);
+                return failure(exception);
             }
         }
     }
@@ -232,5 +435,12 @@ public class ToolRegistry {
             throw new IllegalArgumentException(name + " must not be blank");
         }
         return value;
+    }
+
+    private static String messageOrType(Exception exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank()
+                ? exception.getClass().getSimpleName()
+                : message;
     }
 }

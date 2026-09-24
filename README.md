@@ -1,142 +1,139 @@
-# Java Agent CLI
+# Java Coding Agent
 
-## 项目简介
+A Java-based coding agent runtime with safe repository tools, code editing, controlled Maven testing, diagnostic recovery, structured trajectories, and benchmark-driven evaluation.
 
-Java Agent CLI 是一个基于 Java 17 实现的轻量级 ReAct Agent 框架。项目将大语言模型的推理能力与本地工具执行结合起来，支持 LLM 调用、Function Calling、Tool Registry、ReAct Loop 和文件分析工具。
+## Overview
 
-Agent 会维护对话历史，将用户请求交给 GLM 推理；当模型判断需要读取或搜索项目文件时，Agent 会执行对应工具，并将工具结果作为 observation 返回给模型，最终生成回答。
-
-## Features
-
-- GLM API Integration
-- ReAct Agent
-- Function Calling / Tool Calling
-- Tool Registry
-- Multi-tool Execution
-- Tool Failure Recovery
-- Conversation History and `clear`
-- File Analysis Tools
-
-## Architecture
+The project began as a Java course project and evolved into a coding-agent runtime plus an evaluation framework. The V1 runtime uses GLM function calling to inspect a repository, apply constrained edits, run Maven tests, observe typed failures, and continue a bounded ReAct-style loop.
 
 ```text
-User
-  |
-  v
-Agent <-------------------------+
-  |                             |
-  v                             |
-LLMClient                       |
-  |                             |
-  v                             |
-GLM -- tool_call --> ToolRegistry
-                         |
-                         v
-                       Tools
-                         |
-                         +---- observation ----+
+User Task
+   ↓
+LLM
+   ↓
+Agent Loop
+   ↓
+Tool Call
+   ↓
+Repository / Maven Environment
+   ↓
+Observation
+   ↓
+Recovery / Next Action
+   ↓
+Final Answer
 ```
 
-- **Agent** 负责保存消息历史、控制 ReAct 循环并决定何时返回最终回答。
-- **LLM / GLM** 负责理解用户意图、推理并生成工具调用或最终回答。
-- **ToolRegistry** 负责注册、描述、查找和执行工具。
-- **Tools** 负责执行具体任务，例如列出、读取和搜索文件。
-
-## Supported Tools
-
-| Tool | Description |
-| --- | --- |
-| `list_files` | 递归列出工作目录中的普通文件 |
-| `read_file` | 读取 UTF-8 文本文件 |
-| `search_code` | 递归搜索包含指定关键字的代码行 |
-
-## Demo
-
-用户输入：
+Evaluation is kept separate from runtime execution:
 
 ```text
-读取README.md
+Agent Run → Trajectory → Hidden Evaluator → Metrics → Failure Analysis
 ```
 
-执行流程：
+## Key Features
 
-```text
-Agent
-  ↓
-GLM 判断需要工具
-  ↓
-调用 read_file
-  ↓
-返回文件内容 observation
-  ↓
-GLM 生成最终回答
-```
+- ReAct-style multi-step Agent loop and function calling
+- Workspace confinement with traversal and symlink-escape rejection
+- Repository inspection, exact code editing, and controlled Maven testing
+- Compiler/test diagnostic parsing and bounded recovery behavior
+- Typed `ToolResult` observations and error codes
+- Structured Agent trajectories for reproducible analysis
+- Isolated benchmark fixtures with hidden deterministic evaluation
+- Failure analysis and multiple Agent-strategy experiments
 
-输入 `clear` 可以清空当前对话历史；system message 会被保留。
+## Tools
 
-## Run
+| Tool | Purpose |
+|---|---|
+| `list_files` | Inspect repository files recursively |
+| `read_file` | Read UTF-8 source files |
+| `search_code` | Search code with relative paths and line numbers |
+| `apply_patch` | Apply an exact, single-match edit to an existing file |
+| `run_maven_test` | Run controlled Maven validation with optional test selection |
+| `replace_lines` | Experimental guarded line-based editing; not part of the V1 default strategy |
 
-运行测试：
+## Safety Model
 
-```shell
+V1 accepts workspace-relative paths only and rejects traversal, absolute paths, and Java NIO-detectable symlink escapes. It exposes no unrestricted write/delete operation and no arbitrary shell. Maven execution uses an allowlisted goal, a fixed working directory, validated test selectors, a timeout, and bounded output capture. Text replacement uses temporary files and atomic replacement when supported.
+
+These controls reduce risk but do not make execution completely secure. See [SECURITY.md](SECURITY.md) for the exact policy.
+
+## Benchmark
+
+Benchmark v0.1 contains 20 Java/Maven tasks: 6 DEV and 14 TEST. Categories are `BUG_FIX`, `LOGIC_FIX`, `TEST_FIX`, `SMALL_REFACTOR`, and `MULTI_STEP_DEBUG`, with EASY, MEDIUM, and HARD difficulty labels.
+
+Every task runs in an isolated fixture workspace. Evaluation combines hidden deterministic tests with behavior-first checks; strict source-content constraints are used only when the task explicitly requires them. See [docs/benchmark.md](docs/benchmark.md).
+
+## Experiments
+
+| Strategy | DEV Success |
+|---|---:|
+| REACT | 0/6 |
+| REACT_ACTION_ORIENTED | 3/6 |
+| **REACT_DIAGNOSTIC_RECOVERY** | **4/6** |
+| REACT_PLANNING | 3/6 |
+| REACT_PRECISE_EDIT | 1/6 |
+
+`REACT_DIAGNOSTIC_RECOVERY` was selected as the V1 default before held-out evaluation. Planning and precise editing are retained as negative experiments rather than hidden or discarded.
+
+The first and only frozen held-out TEST run scored **5/14 (35.71%)**. There was no tuning on TEST, no rerun, and no selection of a favorable random run. Detailed results are in [docs/v1-final-test-report.md](docs/v1-final-test-report.md).
+
+## Key Findings
+
+1. Action-oriented completion substantially improved actual tool execution on the DEV set.
+2. Diagnostic recovery achieved the strongest calibrated DEV result.
+3. Planning did not activate reliably under the tested protocol and model.
+4. Precise line editing recovered one exact-patch failure but introduced substantial interaction overhead.
+5. Held-out TEST performance was materially lower than DEV performance, revealing generalization limits, especially for refactoring and recovery.
+
+The samples are small; these are descriptive findings, not claims of statistical significance.
+
+## Quick Start
+
+Requirements: Java 17, Maven 3.9+, a GLM API key, and the currently configured HTTP proxy at `127.0.0.1:7897`.
+
+```powershell
+$env:GLM_API_KEY="YOUR_KEY"
 mvn test
-```
-
-启动 CLI：
-
-```shell
 mvn exec:java '-Dexec.mainClass=com.agent.Main'
 ```
 
-启动后可以输入普通问题或文件任务，例如：
+The CLI accepts normal questions and coding/repository tasks. Enter `clear` to reset conversation history while retaining the system message. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
 
-```text
-介绍一下Java17
-读取README.md
-clear
-```
+Ordinary `mvn test` is deterministic and does not call GLM. The live smoke test is opt-in through `mvn test -Pglm-integration`.
 
-## Environment
+## Benchmark Usage
 
-- Java 17
-- Maven 3.9+
-- 环境变量 `GLM_API_KEY`
-- 本地 HTTP 代理 `127.0.0.1:7897`
-
-PowerShell 当前会话设置示例：
+The benchmark requires `GLM_API_KEY`. The exact Maven invocation used by this repository is:
 
 ```powershell
-$env:GLM_API_KEY = "your-api-key"
+mvn exec:exec '-Dexec.executable=java' '-Dexec.args=-classpath %classpath com.agent.benchmark.BenchmarkMain --baseline react_diagnostic_recovery --split dev'
 ```
 
-API Key 不应写入源码、README、`.env` 提交或其他 Git 跟踪文件。项目的 `.gitignore` 已忽略 `.env`。
+Supported baseline values include `react`, `react_action_oriented`, `react_diagnostic_recovery`, `react_planning`, and `react_precise_edit`. Filters also include `--category`, `--difficulty`, `--limit`, and `--output`.
 
-如需显示 GLM HTTP 状态码，可启用调试输出：
+> TEST is intended as held-out evaluation and should not be used for prompt or strategy tuning. The frozen V1 TEST run has already been completed and must not be rerun to select a better outcome.
 
-```powershell
-$env:GLM_DEBUG = "true"
-```
+## Documentation
 
-默认不会打印 HTTP 状态码。
+- [Architecture](docs/architecture.md)
+- [Benchmark design](docs/benchmark.md)
+- [Experiment record](docs/experiments.md)
+- [Failure analysis](docs/failure-analysis.md)
+- [Representative demo](examples/demo.md)
+- [V1 held-out TEST report](docs/v1-final-test-report.md)
 
-## Project Structure
+## Limitations
 
-```text
-src/main/java/com/agent/
-├── Main.java                 # CLI 入口
-├── agent/
-│   └── Agent.java            # ReAct 循环与消息历史
-├── llm/
-│   ├── LLMClient.java        # LLM 抽象接口
-│   ├── GlmClient.java        # GLM API 客户端
-│   ├── Message.java          # 对话消息
-│   ├── LLMResponse.java      # 模型响应
-│   ├── ToolCall.java         # 工具调用
-│   └── ToolDefinition.java   # 工具 Schema
-└── tool/
-    ├── Tool.java             # 统一工具接口
-    ├── ToolRegistry.java     # 工具注册与执行
-    ├── ListFilesTool.java
-    ├── ReadFileTool.java
-    └── SearchCodeTool.java
-```
+- Small benchmark and one primary model/provider
+- Stochastic LLM behavior and only one frozen TEST run
+- Java/Maven task scope rather than arbitrary repositories
+- No arbitrary shell or unrestricted file write/delete
+- Refactoring and recovery after compiler/test failures remain weak
+- No Multi-Agent system, persistent Memory, or Agentic RL in V1
+
+## Roadmap
+
+V2 exploration: Agentic RL with verifiable coding rewards.
+
+Possible future exploration, without commitment: Multi-Agent coordination and persistent Memory.

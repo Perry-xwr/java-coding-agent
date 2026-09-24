@@ -1,13 +1,11 @@
 package com.agent.agent;
 
-import com.agent.llm.GlmClient;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
 import com.agent.tool.ToolRegistry;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -20,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AgentTest {
@@ -43,24 +42,22 @@ class AgentTest {
     }
 
     @Test
-    @EnabledIfEnvironmentVariable(named = "GLM_API_KEY", matches = ".+")
-    void realGlmCallsReadFileToolAndReturnsFinalAnswer() throws IOException {
-        Files.writeString(tempDir.resolve("README.md"), "Agent CLI README live tool marker");
-        Agent agent = new Agent(new GlmClient(), ToolRegistry.withFileTools(tempDir));
+    void callsReadFileAndReturnsFinalAnswer() throws IOException {
+        Files.writeString(tempDir.resolve("README.md"), "Agent CLI README marker");
+        FakeLLMClient llmClient = new FakeLLMClient(List.of(
+                new LLMResponse("", List.of(
+                        new ToolCall("call-read", "read_file", "{\"path\":\"README.md\"}")
+                )),
+                new LLMResponse("README 已读取。", List.of())
+        ));
+        Agent agent = new Agent(llmClient, ToolRegistry.withFileTools(tempDir));
 
-        String answer = agent.run("读取README.md");
-
-        assertTrue(!answer.isBlank());
+        assertEquals("README 已读取。", agent.run("读取README.md"));
+        assertEquals(2, llmClient.callCount());
         assertTrue(agent.history().stream().anyMatch(
                 message -> message.role().equals("tool")
-                        && message.content().equals("Agent CLI README live tool marker")
-                        && message.toolCallId() != null
-        ));
-        assertTrue(agent.history().stream().anyMatch(
-                message -> message.role().equals("assistant")
-                        && message.toolCalls().stream().anyMatch(
-                                call -> call.get("function").toString().contains("read_file")
-                        )
+                        && message.content().equals("Agent CLI README marker")
+                        && message.toolCallId().equals("call-read")
         ));
     }
 
@@ -105,7 +102,7 @@ class AgentTest {
         assertTrue(agent.history().stream().anyMatch(
                 message -> message.role().equals("tool")
                         && message.toolCallId().equals("call-missing")
-                        && message.content().contains("failed")
+                        && message.content().contains("FILE_NOT_FOUND")
                         && message.content().contains("missing.txt")
         ));
     }
@@ -121,6 +118,26 @@ class AgentTest {
         agent.clearHistory();
 
         assertEquals(List.of(Message.system("system instructions")), agent.history());
+    }
+
+    @Test
+    void stopsAfterMaximumIterations() {
+        List<LLMResponse> responses = new ArrayList<>();
+        for (int index = 0; index < Agent.MAX_ITERATIONS; index++) {
+            responses.add(new LLMResponse("", List.of(
+                    new ToolCall("call-" + index, "missing", "{}")
+            )));
+        }
+        FakeLLMClient llmClient = new FakeLLMClient(responses);
+        Agent agent = new Agent(llmClient, new ToolRegistry());
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> agent.run("keep calling tools")
+        );
+
+        assertTrue(exception.getMessage().contains(String.valueOf(Agent.MAX_ITERATIONS)));
+        assertEquals(Agent.MAX_ITERATIONS, llmClient.callCount());
     }
 
     private static List<String> calledToolNames(List<Message> history) {

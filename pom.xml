@@ -18,12 +18,28 @@
                     <mainClass>com.agent.Main</mainClass>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <java.io.tmpdir>${project.build.directory}</java.io.tmpdir>
+                        <glm.integration>${glm.integration}</glm.integration>
+                    </systemPropertyVariables>
+                    <environmentVariables>
+                        <TEMP>${project.build.directory}</TEMP>
+                        <TMP>${project.build.directory}</TMP>
+                    </environmentVariables>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <glm.integration>false</glm.integration>
     </properties>
 
     <dependencies>
@@ -44,4 +60,13 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>glm-integration</id>
+            <properties>
+                <glm.integration>true</glm.integration>
+            </properties>
+        </profile>
+    </profiles>
 </project>

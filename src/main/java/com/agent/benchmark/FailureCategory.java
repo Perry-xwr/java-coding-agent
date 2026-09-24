@@ -1,0 +1,17 @@
+package com.agent.benchmark;
+
+public enum FailureCategory {
+    NONE,
+    NO_REQUIRED_CHANGE,
+    PATCH_FAILED,
+    TEST_FAILED_UNRECOVERED,
+    TOOL_NOT_FOUND,
+    INVALID_ARGUMENTS,
+    WORKSPACE_VIOLATION,
+    PREMATURE_FINAL,
+    MAX_STEPS,
+    LLM_ERROR,
+    LOOP_OR_REPEATED_ACTION,
+    EVALUATOR_ERROR,
+    UNKNOWN
+}

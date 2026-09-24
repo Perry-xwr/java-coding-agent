@@ -15,5 +15,5 @@ public interface Tool {
         );
     }
 
-    String execute(String arguments);
+    ToolResult execute(String arguments);
 }

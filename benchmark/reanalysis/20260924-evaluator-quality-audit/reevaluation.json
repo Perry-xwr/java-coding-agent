@@ -1,0 +1,19 @@
+{
+  "auditId": "20260924-evaluator-quality-audit",
+  "sourceExperimentId": "20260924-014312-react_diagnostic_recovery",
+  "taskId": "multi_001",
+  "method": "Offline evaluation of the preserved final workspace; no GLM call and no benchmark rerun",
+  "workspaceSnapshot": "target/benchmark-runs/20260924-014312-react_diagnostic_recovery/multi_001",
+  "behavioralPassed": true,
+  "contentCheckPassed": false,
+  "strictContentRequired": false,
+  "requiredModifiedFilePresent": true,
+  "finalSuccess": true,
+  "originalEvaluationModified": false,
+  "evidence": {
+    "testClass": "bench.RangeSumHiddenTest",
+    "offlineMavenExitCode": 0,
+    "offlineMavenResult": "BUILD SUCCESS",
+    "sourceUsesEquivalentInclusiveBounds": true
+  }
+}

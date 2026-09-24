@@ -1,0 +1,24 @@
+{
+  "specs": [
+    {"taskId":"bugfix_001","requiredContains":["a + b"],"forbiddenContains":["a - b"],"strictContentCheck":false},
+    {"taskId":"bugfix_002","requiredContains":[">= 18"],"forbiddenContains":["> 18"],"strictContentCheck":false},
+    {"taskId":"bugfix_003","requiredContains":["Objects.equals"],"forbiddenContains":["left == right"],"strictContentCheck":false},
+    {"taskId":"bugfix_004","requiredContains":["i < values.length"],"forbiddenContains":["i <= values.length"],"strictContentCheck":false},
+    {"taskId":"bugfix_005","requiredContains":["split(\":\", 2)"],"forbiddenContains":["split(\",\", 2)"],"strictContentCheck":false},
+    {"taskId":"logic_001","requiredContains":["values[0]"],"forbiddenContains":["int max = 0"],"strictContentCheck":false},
+    {"taskId":"logic_002","requiredContains":["LinkedHashSet"],"forbiddenContains":[],"strictContentCheck":false},
+    {"taskId":"logic_003","requiredContains":[">= 100"],"forbiddenContains":["> 100"],"strictContentCheck":false},
+    {"taskId":"logic_004","requiredContains":["replace(\" \", \"\")","toLowerCase"],"forbiddenContains":[],"strictContentCheck":false},
+    {"taskId":"testfix_001","requiredContains":["assertEquals(5"],"forbiddenContains":["assertEquals(4"],"strictContentCheck":true},
+    {"taskId":"testfix_002","requiredContains":["Hello, Ada"],"forbiddenContains":["Hi, Ada"],"strictContentCheck":true},
+    {"taskId":"testfix_003","requiredContains":["assertEquals(1"],"forbiddenContains":["assertEquals(0"],"strictContentCheck":true},
+    {"taskId":"testfix_004","requiredContains":["assertTrue"],"forbiddenContains":["assertFalse"],"strictContentCheck":true},
+    {"taskId":"refactor_001","requiredContains":["applyTax"],"forbiddenContains":[],"strictContentCheck":true},
+    {"taskId":"refactor_002","requiredContains":["normalize"],"forbiddenContains":[],"strictContentCheck":true},
+    {"taskId":"refactor_003","requiredContains":["requireItem"],"forbiddenContains":[],"strictContentCheck":true},
+    {"taskId":"multi_001","requiredContains":["Math.min","Math.max","<= end"],"forbiddenContains":[],"strictContentCheck":false},
+    {"taskId":"multi_002","requiredContains":["parts.length","trim()"],"forbiddenContains":["parts.length - 1"],"strictContentCheck":false},
+    {"taskId":"multi_003","requiredContains":["quantity < 0","+= quantity"],"forbiddenContains":["total++"],"strictContentCheck":false},
+    {"taskId":"multi_004","requiredContains":[">= 18","at > 0","at < email.length() - 1"],"forbiddenContains":[],"strictContentCheck":false}
+  ]
+}
