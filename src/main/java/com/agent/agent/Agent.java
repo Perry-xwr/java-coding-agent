@@ -34,6 +34,7 @@ public class Agent {
     private final TaskMode taskMode;
     private final boolean diagnosticRecovery;
     private final boolean planningEnabled;
+    private final AgentEventListener eventListener;
     private final List<Message> history = new ArrayList<>();
 
     public Agent(LLMClient llmClient, ToolRegistry toolRegistry) {
@@ -84,6 +85,20 @@ public class Agent {
             boolean diagnosticRecovery,
             boolean planningEnabled
     ) {
+        this(llmClient, toolRegistry, systemPrompt, maxIterations, taskMode,
+                diagnosticRecovery, planningEnabled, AgentEventListener.NO_OP);
+    }
+
+    public Agent(
+            LLMClient llmClient,
+            ToolRegistry toolRegistry,
+            String systemPrompt,
+            int maxIterations,
+            TaskMode taskMode,
+            boolean diagnosticRecovery,
+            boolean planningEnabled,
+            AgentEventListener eventListener
+    ) {
         this.llmClient = Objects.requireNonNull(llmClient, "llmClient must not be null");
         this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry must not be null");
         if (maxIterations < 1) {
@@ -93,6 +108,7 @@ public class Agent {
         this.taskMode = Objects.requireNonNull(taskMode, "taskMode must not be null");
         this.diagnosticRecovery = diagnosticRecovery;
         this.planningEnabled = planningEnabled;
+        this.eventListener = Objects.requireNonNull(eventListener, "eventListener must not be null");
         this.systemMessage = Message.system(
                 Objects.requireNonNull(systemPrompt, "systemPrompt must not be null")
         );
@@ -273,10 +289,12 @@ public class Agent {
                 long toolStartedAt = System.currentTimeMillis();
                 long toolStartedNanos = System.nanoTime();
                 Map<String, Object> parsedArguments = parseArguments(toolCall.arguments());
+                eventListener.toolStarted(toolCall.name(), parsedArguments);
                 ToolResult toolResult = toolRegistry.execute(
                         toolCall.name(),
                         toolCall.arguments()
                 );
+                eventListener.toolFinished(toolCall.name(), toolResult);
                 steps.add(new AgentStep(
                         steps.size() + 1,
                         AgentActionType.TOOL_CALL,
