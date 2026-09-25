@@ -19,4 +19,10 @@ public record CliSessions(Agent chat, Agent read, Agent code) {
             case AUTO -> throw new IllegalArgumentException("AUTO routing is not enabled");
         };
     }
+
+    public void clearAll() {
+        chat.clearHistory();
+        read.clearHistory();
+        code.clearHistory();
+    }
 }

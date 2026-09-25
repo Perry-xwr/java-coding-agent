@@ -116,6 +116,8 @@ public class ToolRegistry {
         WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
         registerFileTools(registry, objectMapper, pathResolver);
         registry.register(new ApplyPatchTool(pathResolver, objectMapper));
+        registry.register(new InsertBeforeTool(pathResolver, objectMapper));
+        registry.register(new InsertAfterTool(pathResolver, objectMapper));
         registry.register(new CreateFileTool(pathResolver, objectMapper));
         registry.register(new RunMavenTestTool(
                 pathResolver.root(), processRunner, localRepository, objectMapper
@@ -154,6 +156,7 @@ public class ToolRegistry {
             WorkspacePathResolver pathResolver
     ) {
         registry.register(new ListFilesAdapter(pathResolver, objectMapper));
+        registry.register(new FindFilesTool(pathResolver, objectMapper));
         registry.register(new ReadFileAdapter(pathResolver, objectMapper));
         registry.register(new SearchCodeAdapter(pathResolver, objectMapper));
     }
@@ -224,6 +227,12 @@ public class ToolRegistry {
             case "create_file" -> tool.description()
                     + " Use it only for a genuinely new file. For an existing file, use apply_patch; "
                     + "create_file never overwrites a path that already exists.";
+            case "insert_after" -> tool.description()
+                    + " Read the file first and choose a short, unique, stable anchor. Do not use this "
+                    + "tool when replacing existing text; use apply_patch instead.";
+            case "insert_before" -> tool.description()
+                    + " Read the file first and choose a short, unique, stable anchor. Do not use this "
+                    + "tool when replacing existing text; use apply_patch instead.";
             case "replace_lines" -> tool.description()
                     + " Use it for a clear local range copied from the latest line-numbered read. "
                     + "After STALE_EDIT_CONTEXT, reread the file and construct a fresh range edit.";

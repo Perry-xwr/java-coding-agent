@@ -88,6 +88,26 @@ class PostEditVerificationTest {
     }
 
     @Test
+    void failedVerificationStillAllowsAFurtherRepairAndRetest() throws Exception {
+        Files.writeString(workspace.resolve("App.java"), "old");
+        AgentRunResult result = agent(List.of(
+                call("patch-broken", "apply_patch", patch("App.java", "old", "broken")),
+                call("read-broken", "read_file", path("App.java")),
+                call("test-failed", "run_maven_test", "{}"),
+                call("reread", "read_file", path("App.java")),
+                call("patch-fixed", "apply_patch", patch("App.java", "broken", "fixed")),
+                call("read-fixed", "read_file", path("App.java")),
+                call("test-passed", "run_maven_test", "{}"),
+                answer("Fixed and verified.")
+        ), List.of(failed(), passed())).runWithTrajectory("Update App.java");
+
+        assertTrue(result.trajectory().completed());
+        assertEquals("fixed", Files.readString(workspace.resolve("App.java")));
+        assertEquals(2, toolCount(result, "apply_patch"));
+        assertEquals(2, toolCount(result, "run_maven_test"));
+    }
+
+    @Test
     void javaMutationWithoutMavenEvidenceCannotClaimVerified() throws Exception {
         Files.writeString(workspace.resolve("App.java"), "old");
         AgentRunResult result = agent(List.of(

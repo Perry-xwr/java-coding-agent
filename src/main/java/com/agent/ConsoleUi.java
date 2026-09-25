@@ -91,6 +91,7 @@ public final class ConsoleUi implements AgentEventListener {
             case "list_files", "read_file", "apply_patch", "create_file" ->
                     quoted(safeArguments.get("path"));
             case "search_code" -> quoted(first(safeArguments, "keyword", "query"));
+            case "find_files" -> quoted(safeArguments.get("pattern"));
             case "replace_lines" -> lineRange(safeArguments);
             case "run_maven_test" -> testSelector(safeArguments);
             default -> "";

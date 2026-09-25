@@ -2,9 +2,12 @@ package com.agent;
 
 import com.agent.agent.Agent;
 import com.agent.agent.AgentEventListener;
+import com.agent.agent.TaskMode;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
+import com.agent.llm.ToolCall;
+import com.agent.tool.ToolRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -14,10 +17,13 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.ArrayDeque;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -47,9 +53,9 @@ class InteractiveCliTest {
         assertEquals(0, calls.get());
         String text = output.toString(StandardCharsets.UTF_8).replace("\r\n", "\n");
         assertTrue(text.contains("Java Coding Agent"));
-        assertTrue(text.contains("Mode: CHAT"));
-        assertFalse(text.contains("[CHAT] You > [CHAT] You > "));
-        assertTrue(text.contains("[CHAT] You > \n[CHAT] You > "));
+        assertTrue(text.contains("Mode: AUTO"));
+        assertFalse(text.contains("[AUTO] You > [AUTO] You > "));
+        assertTrue(text.contains("[AUTO] You > \n[AUTO] You > "));
         assertTrue(text.contains("System > Goodbye."));
     }
 
@@ -68,7 +74,8 @@ class InteractiveCliTest {
         assertTrue(text.contains("System > Switched to CHAT mode."));
         assertTrue(text.contains("System > Switched to READ mode."));
         assertTrue(text.contains("System > Switched to CODE mode."));
-        assertTrue(text.contains("AUTO routing is reserved for a later release"));
+        assertTrue(text.contains("System > Switched to AUTO mode."));
+        assertTrue(text.contains("[AUTO] You >"));
         assertTrue(text.contains("/chat   General conversation"));
     }
 
@@ -91,6 +98,211 @@ class InteractiveCliTest {
     }
 
     @Test
+    void autoRoutesEachTaskToItsExistingProfileSession() throws Exception {
+        AtomicInteger chatCalls = new AtomicInteger();
+        AtomicInteger readCalls = new AtomicInteger();
+        AtomicInteger codeCalls = new AtomicInteger();
+        CliSessions sessions = new CliSessions(
+                simpleAgent(countingClient(chatCalls)),
+                simpleAgent(countingClient(readCalls)),
+                simpleAgent(countingClient(codeCalls))
+        );
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ConsoleUi ui = new ConsoleUi(new PrintStream(output, true, StandardCharsets.UTF_8));
+        InteractiveCli cli = new InteractiveCli(sessions, ui, workspace);
+
+        cli.run(new BufferedReader(new StringReader(
+                "/auto\n修改 Calculator.java 的 add 方法\n/chat\nJava 和 C++ 有什么区别\n"
+                        + "/auto\n读取 README.md 并总结\n/exit\n"
+        )));
+
+        assertEquals(1, codeCalls.get());
+        assertEquals(1, chatCalls.get());
+        assertEquals(1, readCalls.get());
+        String text = output.toString(StandardCharsets.UTF_8);
+        assertTrue(text.contains("System > AUTO -> CODE"));
+        assertTrue(text.contains("System > AUTO -> READ"));
+    }
+
+    @Test
+    void defaultAutoRoutesGeneralQuestionToChatSession() throws Exception {
+        AtomicInteger chatCalls = new AtomicInteger();
+        AtomicInteger readCalls = new AtomicInteger();
+        AtomicInteger codeCalls = new AtomicInteger();
+        CliSessions sessions = new CliSessions(
+                simpleAgent(countingClient(chatCalls)),
+                simpleAgent(countingClient(readCalls)),
+                simpleAgent(countingClient(codeCalls))
+        );
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ConsoleUi ui = new ConsoleUi(new PrintStream(output, true, StandardCharsets.UTF_8));
+        InteractiveCli cli = new InteractiveCli(sessions, ui, workspace);
+
+        cli.run(new BufferedReader(new StringReader("Java 和 C++ 有什么区别\n/exit\n")));
+
+        assertEquals(1, chatCalls.get());
+        assertEquals(0, readCalls.get());
+        assertEquals(0, codeCalls.get());
+        String text = output.toString(StandardCharsets.UTF_8);
+        assertTrue(text.contains("Mode: AUTO"));
+        assertTrue(text.contains("[AUTO] You >"));
+        assertTrue(text.contains("System > AUTO -> CHAT"));
+    }
+
+    @Test
+    void defaultAutoRoutesGenericCppFileMutationToCodeSession() throws Exception {
+        AtomicInteger chatCalls = new AtomicInteger();
+        AtomicInteger readCalls = new AtomicInteger();
+        AtomicInteger codeCalls = new AtomicInteger();
+        InteractiveCli cli = cliWithIndependentSessions(chatCalls, readCalls, codeCalls);
+
+        cli.run(new BufferedReader(new StringReader(
+                "修改hello.cpp文件，将里面的内容修改为，打印hello from agent\n/exit\n"
+        )));
+
+        assertEquals(0, chatCalls.get());
+        assertEquals(0, readCalls.get());
+        assertEquals(1, codeCalls.get());
+    }
+
+    @Test
+    void autoReusesPreviousRouteOnlyForShortContextualFollowUps() throws Exception {
+        AtomicInteger chatCalls = new AtomicInteger();
+        AtomicInteger readCalls = new AtomicInteger();
+        AtomicInteger codeCalls = new AtomicInteger();
+        InteractiveCli cli = cliWithIndependentSessions(chatCalls, readCalls, codeCalls);
+
+        cli.run(new DelayedBufferedReader(
+                List.of(
+                        "读取当前目录的 Python 文件",
+                        "是的",
+                        "读你刚刚找到的Python文件",
+                        "把这些文件打开看看",
+                        "Java 和 C++ 有什么区别",
+                        "继续讲",
+                        "修改 Parser.java",
+                        "继续处理",
+                        "Calculator.java 有点问题",
+                        "修改 agent_manual_test.py",
+                        "读取 README.md 并总结",
+                        "介绍 Java",
+                        "继续讲",
+                        "/exit"
+                ),
+                List.of(
+                        0L, 250L, 500L, 750L, 1_000L, 1_250L, 1_500L,
+                        1_750L, 2_000L, 2_250L, 2_500L, 2_750L, 3_000L, 3_250L
+                )
+        ));
+
+        assertEquals(4, chatCalls.get(), "two new CHAT requests and two LOW-confidence continuations");
+        assertEquals(6, readCalls.get(), "READ request, continuations, and independent READ requests");
+        assertEquals(3, codeCalls.get(), "two new CODE requests plus LOW-confidence continuation");
+    }
+
+    @Test
+    void reenteringAutoClearsPreviousRouteForPredictableManualOverride() throws Exception {
+        AtomicInteger chatCalls = new AtomicInteger();
+        AtomicInteger readCalls = new AtomicInteger();
+        AtomicInteger codeCalls = new AtomicInteger();
+        InteractiveCli cli = cliWithIndependentSessions(chatCalls, readCalls, codeCalls);
+
+        cli.run(new BufferedReader(new StringReader(
+                "读取 README.md\n/chat\n是的\n/auto\n继续\n/exit\n"
+        )));
+
+        assertEquals(1, readCalls.get());
+        assertEquals(2, chatCalls.get());
+        assertEquals(0, codeCalls.get());
+    }
+
+    @Test
+    void autoHandsOffAUniqueFindFilesResultFromReadToCodeWithoutCopyingHistory() throws Exception {
+        Files.writeString(workspace.resolve("hello.cpp"), "int main() {}\n");
+        QueueClient readClient = new QueueClient(List.of(
+                response("", toolCall("find", "find_files", "{\"pattern\":\"*.cpp\"}")),
+                response("found hello.cpp")
+        ));
+        CapturingClient codeClient = new CapturingClient();
+        InteractiveCli cli = cli(readAgent(readClient), simpleAgent(countingClient(new AtomicInteger())),
+                simpleAgent(codeClient));
+
+        cli.run(new DelayedBufferedReader(
+                List.of("找所有 cpp 文件", "在这个 cpp 文件里添加 subtract 函数", "/exit"),
+                List.of(0L, 250L, 500L)
+        ));
+
+        assertEquals(List.of("Recent workspace context:\n"
+                        + "The previous workspace operation resolved the referenced file to:\n"
+                        + "hello.cpp\n\nUser request:\n在这个 cpp 文件里添加 subtract 函数"),
+                codeClient.userTasks());
+    }
+
+    @Test
+    void autoHandsOffAUniqueFindFilesResultBetweenReadRequests() throws Exception {
+        Files.writeString(workspace.resolve("a.py"), "print('a')\n");
+        QueueClient readClient = new QueueClient(List.of(
+                response("", toolCall("find", "find_files", "{\"pattern\":\"*.py\"}")),
+                response("found a.py"),
+                response("read a.py")
+        ));
+        InteractiveCli cli = cli(readAgent(readClient), simpleAgent(countingClient(new AtomicInteger())),
+                simpleAgent(countingClient(new AtomicInteger())));
+
+        cli.run(new DelayedBufferedReader(
+                List.of("找所有 Python 文件", "读这个文件", "/exit"),
+                List.of(0L, 250L, 500L)
+        ));
+
+        assertEquals(List.of("找所有 Python 文件", "Recent workspace context:\n"
+                        + "The previous workspace operation resolved the referenced file to:\n"
+                        + "a.py\n\nUser request:\n读这个文件"), readClient.userTasks());
+    }
+
+    @Test
+    void multipleFindResultsArePassedAsAmbiguousCandidatesInsteadOfSelectingOne() throws Exception {
+        Files.writeString(workspace.resolve("a.cpp"), "int a;\n");
+        Files.writeString(workspace.resolve("b.cpp"), "int b;\n");
+        QueueClient readClient = new QueueClient(List.of(
+                response("", toolCall("find", "find_files", "{\"pattern\":\"*.cpp\"}")),
+                response("found candidates")
+        ));
+        CapturingClient codeClient = new CapturingClient();
+        InteractiveCli cli = cli(readAgent(readClient), simpleAgent(countingClient(new AtomicInteger())),
+                simpleAgent(codeClient));
+
+        cli.run(new DelayedBufferedReader(
+                List.of("找所有 cpp 文件", "修改这个文件", "/exit"),
+                List.of(0L, 250L, 500L)
+        ));
+
+        String task = codeClient.userTasks().get(0);
+        assertTrue(task.contains("multiple candidate files: a.cpp, b.cpp"));
+        assertTrue(task.contains("Do not choose one arbitrarily"));
+        assertFalse(task.contains("resolved the referenced file to"));
+    }
+
+    @Test
+    void explicitFileAndGeneralKnowledgeDoNotGetHijackedByWorkingContext() throws Exception {
+        Files.writeString(workspace.resolve("hello.cpp"), "int main() {}\n");
+        QueueClient readClient = new QueueClient(List.of(
+                response("", toolCall("find", "find_files", "{\"pattern\":\"*.cpp\"}")),
+                response("found hello.cpp")
+        ));
+        CapturingClient codeClient = new CapturingClient();
+        AtomicInteger chatCalls = new AtomicInteger();
+        InteractiveCli cli = cli(readAgent(readClient), simpleAgent(countingClient(chatCalls)), simpleAgent(codeClient));
+
+        cli.run(new DelayedBufferedReader(
+                List.of("找所有 cpp 文件", "修改 README.md", "Java 和 C++ 有什么区别", "/exit"),
+                List.of(0L, 250L, 500L, 750L)
+        ));
+
+        assertEquals(List.of("修改 README.md"), codeClient.userTasks());
+        assertEquals(1, chatCalls.get());
+    }
+
+    @Test
     void normalSingleLineSubmitsExactlyOneUserTurn() throws Exception {
         CapturingClient llm = new CapturingClient();
         CapturedCli captured = capturedCli(llm);
@@ -108,7 +320,7 @@ class InteractiveCliTest {
         String newline = System.lineSeparator();
 
         captured.cli().run(new BufferedReader(new StringReader(
-                "请创建 test_create.py，内容如下：\n\ndef add(a, b):\n    return a + b\n"
+                "/chat\n请创建 test_create.py，内容如下：\n\ndef add(a, b):\n    return a + b\n"
         )));
 
         assertEquals(1, llm.calls.get());
@@ -123,12 +335,13 @@ class InteractiveCliTest {
         String newline = System.lineSeparator();
         BufferedReader reader = new DelayedBufferedReader(
                 List.of(
+                        "/chat",
                         "请创建 x.py，内容如下：",
                         "",
                         "def divide(a, b):",
                         "    return a / b"
                 ),
-                List.of(0L, 0L, 0L, 150L)
+                List.of(0L, 0L, 0L, 0L, 150L)
         );
 
         captured.cli().run(reader);
@@ -145,7 +358,7 @@ class InteractiveCliTest {
         String newline = System.lineSeparator();
 
         captured.cli().run(new BufferedReader(new StringReader(
-                "请创建 fenced_test.py：\n```python\ndef multiply(a, b):\n    return a * b\n```\n"
+                "/chat\n请创建 fenced_test.py：\n```python\ndef multiply(a, b):\n    return a * b\n```\n"
         )));
 
         assertEquals(1, llm.calls.get());
@@ -179,7 +392,7 @@ class InteractiveCliTest {
         captured.cli().run(new BufferedReader(new StringReader("\n/exit\n")));
 
         assertEquals(0, llm.calls.get());
-        assertFalse(captured.text().contains("[CHAT] You > [CHAT] You > "));
+        assertFalse(captured.text().contains("[AUTO] You > [AUTO] You > "));
     }
 
     private CapturedCli capturedCli(LLMClient llm) {
@@ -199,6 +412,39 @@ class InteractiveCliTest {
         };
     }
 
+    private static Agent simpleAgent(LLMClient llm) {
+        return new Agent(llm, new ToolRegistry(), "test", 2);
+    }
+
+    private Agent readAgent(LLMClient llm) {
+        return new Agent(llm, ToolRegistry.withFileTools(workspace), "read", 4, TaskMode.READ_ONLY);
+    }
+
+    private InteractiveCli cli(Agent read, Agent chat, Agent code) {
+        return new InteractiveCli(new CliSessions(chat, read, code), new ConsoleUi(System.out), workspace);
+    }
+
+    private static LLMResponse response(String content, ToolCall... calls) {
+        return new LLMResponse(content, List.of(calls));
+    }
+
+    private static ToolCall toolCall(String id, String name, String arguments) {
+        return new ToolCall(id, name, arguments);
+    }
+
+    private InteractiveCli cliWithIndependentSessions(
+            AtomicInteger chatCalls,
+            AtomicInteger readCalls,
+            AtomicInteger codeCalls
+    ) {
+        CliSessions sessions = new CliSessions(
+                simpleAgent(countingClient(chatCalls)),
+                simpleAgent(countingClient(readCalls)),
+                simpleAgent(countingClient(codeCalls))
+        );
+        return new InteractiveCli(sessions, new ConsoleUi(System.out), workspace);
+    }
+
     private static final class CapturingClient implements LLMClient {
         private final AtomicInteger calls = new AtomicInteger();
         private final AtomicReference<List<String>> latestUserTasks = new AtomicReference<>(List.of());
@@ -215,6 +461,27 @@ class InteractiveCliTest {
 
         private List<String> userTasks() {
             return latestUserTasks.get();
+        }
+    }
+
+    private static final class QueueClient implements LLMClient {
+        private final ArrayDeque<LLMResponse> responses;
+        private final List<String> userTasks = new java.util.ArrayList<>();
+
+        private QueueClient(List<LLMResponse> responses) {
+            this.responses = new ArrayDeque<>(responses);
+        }
+
+        @Override
+        public LLMResponse chat(List<Message> messages) {
+            userTasks.clear();
+            userTasks.addAll(messages.stream().filter(message -> message.role().equals("user"))
+                    .map(Message::content).toList());
+            return responses.removeFirst();
+        }
+
+        private List<String> userTasks() {
+            return List.copyOf(userTasks);
         }
     }
 
@@ -244,8 +511,8 @@ class InteractiveCliTest {
             if (index >= lines.size()) {
                 return null;
             }
-            if (index > 0 && !ready()) {
-                throw new IOException("readLine called before the scheduled line was available");
+            while (!ready()) {
+                LockSupport.parkNanos(1_000_000L);
             }
             return lines.get(index++);
         }

@@ -86,6 +86,55 @@ class AgentTest {
     }
 
     @Test
+    void findsAllPythonFilesWithSimpleRecursiveGlobWithoutSearchingTheirContents() throws IOException {
+        Files.writeString(tempDir.resolve("a.py"), "print('a')\n");
+        Files.writeString(tempDir.resolve("b.py"), "print('b')\n");
+        FakeLLMClient llmClient = new FakeLLMClient(List.of(
+                new LLMResponse("", List.of(
+                        new ToolCall("call-find", "find_files", "{\"pattern\":\"*.py\"}")
+                )),
+                new LLMResponse("", List.of(
+                        new ToolCall("call-read-a", "read_file", "{\"path\":\"a.py\"}")
+                )),
+                new LLMResponse("", List.of(
+                        new ToolCall("call-read-b", "read_file", "{\"path\":\"b.py\"}")
+                )),
+                new LLMResponse("Read both Python files.", List.of())
+        ));
+        Agent agent = new Agent(llmClient, ToolRegistry.withFileTools(tempDir));
+
+        assertEquals("Read both Python files.", agent.run("找所有Python文件"));
+        assertEquals(List.of("find_files", "read_file", "read_file"), calledToolNames(agent.history()));
+        assertEquals("{\"pattern\":\"*.py\"}", findFilesArguments(agent.history()));
+        assertTrue(agent.history().stream()
+                .filter(message -> message.role().equals("tool") && message.toolCallId().equals("call-find"))
+                .anyMatch(message -> message.content().contains("a.py") && message.content().contains("b.py")));
+    }
+
+    @Test
+    void findsNestedAgentJavaFilesWithSimpleRecursiveGlob() throws IOException {
+        Path source = Files.createDirectories(tempDir.resolve("src/main/java"));
+        Files.writeString(source.resolve("SampleAgent.java"), "class SampleAgent {}\n");
+        FakeLLMClient llmClient = new FakeLLMClient(List.of(
+                new LLMResponse("", List.of(
+                        new ToolCall("call-find", "find_files", "{\"pattern\":\"*Agent*.java\"}")
+                )),
+                new LLMResponse("", List.of(
+                        new ToolCall("call-read", "read_file", "{\"path\":\"src/main/java/SampleAgent.java\"}")
+                )),
+                new LLMResponse("Read the Agent source.", List.of())
+        ));
+        Agent agent = new Agent(llmClient, ToolRegistry.withFileTools(tempDir));
+
+        assertEquals("Read the Agent source.", agent.run("找一下名字里包含Agent的Java文件"));
+        assertEquals(List.of("find_files", "read_file"), calledToolNames(agent.history()));
+        assertEquals("{\"pattern\":\"*Agent*.java\"}", findFilesArguments(agent.history()));
+        assertTrue(agent.history().stream()
+                .filter(message -> message.role().equals("tool") && message.toolCallId().equals("call-find"))
+                .anyMatch(message -> message.content().contains("SampleAgent.java")));
+    }
+
+    @Test
     void addsToolFailureToHistoryAndContinues() throws IOException {
         FakeLLMClient llmClient = new FakeLLMClient(List.of(
                 new LLMResponse("", List.of(
@@ -146,6 +195,16 @@ class AgentTest {
                 .map(call -> (Map<?, ?>) call.get("function"))
                 .map(function -> function.get("name").toString())
                 .toList();
+    }
+
+    private static String findFilesArguments(List<Message> history) {
+        return history.stream()
+                .flatMap(message -> message.toolCalls().stream())
+                .map(call -> (Map<?, ?>) call.get("function"))
+                .filter(function -> "find_files".equals(function.get("name")))
+                .map(function -> function.get("arguments").toString())
+                .findFirst()
+                .orElseThrow();
     }
 
     private static final class FakeLLMClient implements LLMClient {
