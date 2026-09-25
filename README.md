@@ -33,9 +33,9 @@ Agent Run → Trajectory → Hidden Evaluator → Metrics → Failure Analysis
 ## Key Features
 
 - ReAct-style multi-step Agent loop and function calling
-- Interactive `CHAT` / `READ` / `CODE` modes with streamed model output
+- Interactive `CHAT` / `READ` / `CODE` modes plus deterministic `AUTO` routing, with streamed model output
 - Workspace confinement with traversal and symlink-escape rejection
-- Repository inspection, safe new-file creation, exact code editing, and controlled Maven testing
+- Repository inspection and discovery, safe new-file creation, exact anchored editing, and controlled Maven testing
 - Compiler/test diagnostic parsing and bounded recovery behavior
 - Post-edit evidence gates: reread changed files and require Maven evidence for Java changes
 - Typed `ToolResult` observations and error codes
@@ -48,9 +48,12 @@ Agent Run → Trajectory → Hidden Evaluator → Metrics → Failure Analysis
 | Tool | Purpose |
 |---|---|
 | `list_files` | Inspect repository files recursively |
+| `find_files` | Discover workspace files by safe glob pattern without reading file contents |
 | `read_file` | Read UTF-8 source files |
 | `search_code` | Search code with relative paths and line numbers |
 | `apply_patch` | Apply an exact, single-match edit to an existing file |
+| `insert_before` | Insert text before one exact, unique anchor in an existing file |
+| `insert_after` | Insert text after one exact, unique anchor in an existing file |
 | `create_file` | Create one new UTF-8 text file without overwriting an existing path |
 | `run_maven_test` | Run controlled Maven validation with optional test selection |
 | `replace_lines` | Experimental guarded line-based editing; not part of the V1 default strategy |
@@ -101,7 +104,7 @@ mvn test
 mvn exec:java '-Dexec.mainClass=com.agent.Main'
 ```
 
-The CLI starts in `CHAT` mode. Use `/read` for repository inspection and `/code` for workspace modifications; output is streamed as it arrives. In `CODE`, successful writes must be reread before completion, and Java changes require a successful Maven test when the tool is available. Enter `clear` to reset the active mode's conversation history while retaining its system message. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
+The CLI starts in `AUTO` mode and deterministically routes clear workspace reads to `READ`, explicit workspace changes to `CODE`, and general questions to `CHAT`. Use `/chat`, `/read`, `/code`, or `/auto` to override the active mode. Output is streamed as it arrives. In `CODE`, successful writes must be reread before completion, and Java changes require a successful Maven test when the tool is available. Enter `clear` in `AUTO` mode to reset all profile histories and the short-lived workspace reference context. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
 
 For pasted multi-line prompts, normal paste capture is supported. `/begin` followed by `/end` remains the reliable explicit fallback when terminal input timing is ambiguous.
 
@@ -128,7 +131,7 @@ Supported baseline values include `react`, `react_action_oriented`, `react_diagn
 - [Representative demo](examples/demo.md)
 - [V1 held-out TEST report](docs/v1-final-test-report.md)
 
-## Limitations
+## Known Limitations
 
 - Small benchmark and one primary model/provider
 - Stochastic LLM behavior and only one frozen TEST run
@@ -138,7 +141,10 @@ Supported baseline values include `react`, `react_action_oriented`, `react_diagn
 - Post-edit evidence does not guarantee semantic correctness of an edit
 - Streamed intermediate model text can appear before a final structured failure state
 - Automatic multi-line paste capture is timing-sensitive; `/begin` and `/end` are the reliable fallback
-- Automatic task routing is not implemented; select `CHAT`, `READ`, or `CODE` explicitly
+- AUTO routing is deterministic and intentionally lightweight; ambiguous workspace requests default to safer read-only handling
+- Tool selection still depends on the LLM after routing
+- Structurally sensitive edits may still select a suboptimal insertion tool or anchor; the runtime has no AST parser
+- This is a research/educational coding-agent runtime, not a production IDE replacement
 - No Multi-Agent system, persistent Memory, or Agentic RL in V1
 
 ## Roadmap

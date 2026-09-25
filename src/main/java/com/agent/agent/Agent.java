@@ -370,7 +370,14 @@ public class Agent {
                 Map<String, Object> parsedArguments = parseArguments(toolCall.arguments());
                 eventListener.toolStarted(toolCall.name(), parsedArguments);
                 String toolPath = Objects.toString(parsedArguments.get("path"), null);
-                ToolResult toolResult = isEditTool(toolCall.name())
+                ToolResult toolResult = isWorkspaceMutationTool(toolCall.name())
+                        && progress.requiresFreshReadBeforeMutation(toolPath)
+                        ? ToolResult.failure(
+                                ToolErrorCode.STALE_EDIT_CONTEXT,
+                                "A successful mutation changed " + toolPath
+                                        + "; read_file must refresh the current content before another mutation"
+                        )
+                        : isEditTool(toolCall.name())
                         && progress.requiresRereadBeforeEdit(toolPath)
                         ? ToolResult.failure(
                                 ToolErrorCode.STALE_EDIT_CONTEXT,
@@ -399,6 +406,18 @@ public class Agent {
                         steps.size()
                 );
                 history.add(Message.tool(toolCall.id(), serializeObservation(toolResult)));
+
+                if (diagnosticRecovery
+                        && taskMode == TaskMode.CODE_MODIFICATION
+                        && progress.consumeConvergenceGuidanceAfterReread()) {
+                    String feedback = "POST_EDIT_CONVERGENCE: The latest successful mutation has been reread. "
+                            + "If the requested change is present, finish the task now instead of making "
+                            + "unrequested cleanup or cosmetic edits. If the changed file is Java, run the "
+                            + "required Maven verification before finalizing. Continue editing only when the "
+                            + "reread or verification shows that the requested change is incorrect or incomplete.";
+                    steps.add(runtimeFeedbackStep(steps.size() + 1, null, feedback));
+                    history.add(Message.system(feedback));
+                }
 
                 String recoveryFeedback = editRecoveryFeedback(
                         toolCall.name(),
@@ -711,7 +730,10 @@ public class Agent {
         String rereadRequirement = progress.requiresRereadBeforeEdit(path)
                 ? " Two consecutive edits have failed for this file; read_file is required before another edit."
                 : "";
-        if ("apply_patch".equals(toolName) || "replace_lines".equals(toolName)) {
+        if ("apply_patch".equals(toolName)
+                || "replace_lines".equals(toolName)
+                || "insert_before".equals(toolName)
+                || "insert_after".equals(toolName)) {
             return switch (result.errorCode()) {
                 case INVALID_ARGUMENTS -> "EDIT_RECOVERY_INVALID_ARGUMENTS: The edit arguments are invalid. "
                         + "Do not retry them unchanged. Read " + target + " again, then use a real, non-empty, "
@@ -720,6 +742,9 @@ public class Agent {
                 case TEXT_NOT_FOUND -> "EDIT_RECOVERY_TEXT_NOT_FOUND: The requested oldText is not present in "
                         + target + ". Use read_file to obtain the latest content before constructing a new patch; "
                         + "do not repeat the same oldText." + rereadRequirement;
+                case AMBIGUOUS_MATCH, MULTIPLE_MATCHES -> "EDIT_RECOVERY_AMBIGUOUS_MATCH: The requested anchor "
+                        + "occurs more than once in " + target + ". Do not choose one arbitrarily; read the "
+                        + "file and use a more specific unique anchor." + rereadRequirement;
                 case NO_EFFECT_CHANGE -> "EDIT_RECOVERY_NO_EFFECT_CHANGE: oldText and newText produced no content "
                         + "change in " + target + ". Do not submit the same patch again; re-check the current file "
                         + "and the requested outcome." + rereadRequirement;
@@ -738,13 +763,22 @@ public class Agent {
     }
 
     private static boolean isEditTool(String toolName) {
-        return "apply_patch".equals(toolName) || "replace_lines".equals(toolName);
+        return "apply_patch".equals(toolName)
+                || "replace_lines".equals(toolName)
+                || "insert_before".equals(toolName)
+                || "insert_after".equals(toolName);
+    }
+
+    private static boolean isWorkspaceMutationTool(String toolName) {
+        return "apply_patch".equals(toolName)
+                || "replace_lines".equals(toolName)
+                || "insert_before".equals(toolName)
+                || "insert_after".equals(toolName)
+                || "create_file".equals(toolName);
     }
 
     private static boolean isSuccessfulWorkspaceMutation(String toolName, ToolResult result) {
-        return ("apply_patch".equals(toolName)
-                || "replace_lines".equals(toolName)
-                || "create_file".equals(toolName))
+        return isWorkspaceMutationTool(toolName)
                 && result.success()
                 && Boolean.TRUE.equals(result.metadata().get("changed"));
     }

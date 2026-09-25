@@ -38,7 +38,7 @@ class CliAgentFactoryTest {
 
         read.run("inspect repository");
 
-        assertEquals(List.of("list_files", "read_file", "search_code"), client.toolNames().get(0));
+        assertEquals(List.of("list_files", "find_files", "read_file", "search_code"), client.toolNames().get(0));
         assertFalse(client.toolNames().get(0).contains("apply_patch"));
         assertFalse(client.toolNames().get(0).contains("run_maven_test"));
     }
@@ -52,8 +52,8 @@ class CliAgentFactoryTest {
 
         assertEquals(
                 List.of(
-                        "list_files", "read_file", "search_code", "apply_patch",
-                        "create_file", "run_maven_test"
+                        "list_files", "find_files", "read_file", "search_code", "apply_patch",
+                        "insert_before", "insert_after", "create_file", "run_maven_test"
                 ),
                 client.toolNames().get(0)
         );

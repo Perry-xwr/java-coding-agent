@@ -24,9 +24,10 @@ class ToolRegistryTest {
         ToolRegistry registry = ToolRegistry.withFileTools(tempDir);
 
         assertEquals("list_files", registry.getTool("list_files").name());
+        assertEquals("find_files", registry.getTool("find_files").name());
         assertEquals("read_file", registry.getTool("read_file").name());
         assertEquals("search_code", registry.getTool("search_code").name());
-        assertEquals(3, registry.definitions().size());
+        assertEquals(4, registry.definitions().size());
         assertTrue(registry.definitions().stream().anyMatch(
                 definition -> definition.name().equals("read_file")
                         && definition.parameters().toString().contains("path")
@@ -45,7 +46,7 @@ class ToolRegistryTest {
 
         assertEquals("apply_patch", registry.getTool("apply_patch").name());
         assertEquals("run_maven_test", registry.getTool("run_maven_test").name());
-        assertEquals(5, registry.definitions().size());
+        assertEquals(6, registry.definitions().size());
     }
 
     @Test
@@ -61,7 +62,13 @@ class ToolRegistryTest {
         ToolRegistry read = ToolRegistry.withFileTools(tempDir);
 
         assertEquals("create_file", code.getTool("create_file").name());
+        assertEquals("insert_before", code.getTool("insert_before").name());
+        assertEquals("insert_after", code.getTool("insert_after").name());
+        assertEquals("find_files", code.getTool("find_files").name());
+        assertEquals("find_files", read.getTool("find_files").name());
         assertThrows(IllegalArgumentException.class, () -> read.getTool("create_file"));
+        assertThrows(IllegalArgumentException.class, () -> read.getTool("insert_before"));
+        assertThrows(IllegalArgumentException.class, () -> read.getTool("insert_after"));
     }
 
     @Test
@@ -126,6 +133,11 @@ class ToolRegistryTest {
 
         JsonNode listedFiles = objectMapper.readTree(registry.execute("list_files", "{}").output());
         assertEquals("Example.java", listedFiles.get(0).asText());
+
+        JsonNode foundFiles = objectMapper.readTree(registry.execute(
+                "find_files", "{\"pattern\":\"**/*.java\"}"
+        ).output());
+        assertEquals("Example.java", foundFiles.path("files").get(0).asText());
 
         assertEquals(
                 "class Example { // needle\n}\n",

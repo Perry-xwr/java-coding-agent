@@ -23,6 +23,8 @@ public final class AgentProgress {
     private int lastSuccessfulReadStep;
     private boolean verificationRequired;
     private boolean postMutationReadSeen;
+    private boolean convergenceGuidancePending;
+    private final Set<String> pathsRequiringFreshRead = new HashSet<>();
     private boolean postMutationTestSeen;
     private Boolean postMutationTestPassed;
     private ToolErrorCode postMutationTestErrorCode;
@@ -52,6 +54,11 @@ public final class AgentProgress {
             lastPatchStep = stepIndex;
             verificationRequired = true;
             postMutationReadSeen = false;
+            convergenceGuidancePending = true;
+            String changedPath = text(arguments.get("path"));
+            if (changedPath != null && !changedPath.isBlank()) {
+                pathsRequiringFreshRead.add(pathKey(changedPath));
+            }
             postMutationTestSeen = false;
             postMutationTestPassed = null;
             postMutationTestErrorCode = null;
@@ -68,6 +75,7 @@ public final class AgentProgress {
             if (path != null) {
                 successfullyReadPaths.add(path);
                 lastSuccessfulReadStep = stepIndex;
+                pathsRequiringFreshRead.remove(pathKey(path));
                 if (verificationRequired
                         && stepIndex > lastPatchStep
                         && path.equals(lastModifiedFile)) {
@@ -131,6 +139,20 @@ public final class AgentProgress {
 
     public boolean postMutationReadSeen() {
         return postMutationReadSeen;
+    }
+
+    /** Returns true once after the latest successful mutation has been reread. */
+    public boolean consumeConvergenceGuidanceAfterReread() {
+        if (!convergenceGuidancePending || !postMutationReadSeen) {
+            return false;
+        }
+        convergenceGuidancePending = false;
+        return true;
+    }
+
+    /** A successful mutation invalidates prior edit context for that exact workspace path. */
+    public boolean requiresFreshReadBeforeMutation(String path) {
+        return path != null && !path.isBlank() && pathsRequiringFreshRead.contains(pathKey(path));
     }
 
     public boolean postMutationTestSeen() {
@@ -255,6 +277,14 @@ public final class AgentProgress {
         return value == null ? null : value.toString();
     }
 
+    private static String pathKey(String path) {
+        try {
+            return java.nio.file.Path.of(path).normalize().toString();
+        } catch (java.nio.file.InvalidPathException exception) {
+            return path;
+        }
+    }
+
     private void observeEditAttempt(String path, ToolResult result) {
         if (result.success()) {
             consecutiveEditFailurePath = null;
@@ -277,12 +307,17 @@ public final class AgentProgress {
     }
 
     private static boolean isEditTool(String toolName) {
-        return "apply_patch".equals(toolName) || "replace_lines".equals(toolName);
+        return "apply_patch".equals(toolName)
+                || "replace_lines".equals(toolName)
+                || "insert_before".equals(toolName)
+                || "insert_after".equals(toolName);
     }
 
     private static boolean isWorkspaceMutationTool(String toolName) {
         return "apply_patch".equals(toolName)
                 || "replace_lines".equals(toolName)
+                || "insert_before".equals(toolName)
+                || "insert_after".equals(toolName)
                 || "create_file".equals(toolName);
     }
 }
