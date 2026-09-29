@@ -188,6 +188,37 @@ class CliIntentRouterTest {
         assertDecision(instruction, expectedMode, expectedConfidence, expectedReason);
     }
 
+    @ParameterizedTest(name = "workspace file creation {index}: {0}")
+    @MethodSource("workspaceFileCreationRoutingMatrix")
+    void routesWorkspaceFileCreationWithoutRequiringConcreteFilename(
+            String instruction,
+            CliMode expectedMode,
+            RoutingConfidence expectedConfidence,
+            RoutingReason expectedReason
+    ) {
+        assertDecision(instruction, expectedMode, expectedConfidence, expectedReason);
+    }
+
+    private static Stream<Arguments> workspaceFileCreationRoutingMatrix() {
+        return Stream.of(
+                Arguments.of("请在该目录下创建一个java文件用于计算斐波那契数列", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("请在当前目录创建一个 Java 文件", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("帮我在这个目录下新建一个 Java 类", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("在这里创建一个 Python 文件", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("给当前项目增加一个配置文件", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("在该文件夹下创建 README", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("帮我创建一个名为 Fibonacci.java 的文件", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("Java 文件怎么创建？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("如何创建一个 Java 文件？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("怎么在 Maven 项目中新建 Java 类？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("创建 Java 文件需要注意什么？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("Python 文件应该怎么创建？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("看看该目录下有哪些 Java 文件，不要修改", CliMode.READ, RoutingConfidence.HIGH, RoutingReason.WORKSPACE_READ_REQUEST),
+                Arguments.of("分析这个目录里的 Java 代码", CliMode.READ, RoutingConfidence.HIGH, RoutingReason.WORKSPACE_READ_REQUEST),
+                Arguments.of("找一下当前目录有哪些配置文件", CliMode.READ, RoutingConfidence.MEDIUM, RoutingReason.AMBIGUOUS_WORKSPACE_REQUEST)
+        );
+    }
+
     private static Stream<Arguments> codingActionReliabilityMatrix() {
         return Stream.of(
                 Arguments.of("Maven test 和 package 有什么区别？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),

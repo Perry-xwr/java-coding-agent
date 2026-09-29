@@ -13,7 +13,9 @@ public final class CliIntentRouter {
     private static final List<String> WORKSPACE_REFERENCES = List.of(
             "readme", "dockerfile", "makefile", "src/", "src\\",
             "这个文件", "该文件", "这个项目", "该项目", "这个函数", "该函数", "这个类", "该类",
-            "仓库", "当前目录", "当前项目", "当前 maven", "项目里", "工作区",
+            "仓库", "当前目录", "该目录", "该目录下", "这个目录", "此目录", "目录下",
+            "当前文件夹", "该文件夹", "这个文件夹", "这里",
+            "当前项目", "当前 maven", "项目里", "工作区",
             "repository", "workspace", "this file", "this project"
     );
     private static final List<String> MUTATION_INTENTS = List.of(
@@ -51,6 +53,16 @@ public final class CliIntentRouter {
     private static final List<String> EXPLICIT_FILE_CREATION = List.of(
             "创建文件", "新建文件", "create file"
     );
+    private static final List<String> FILE_CREATION_ACTIONS = List.of(
+            "创建", "新建", "create"
+    );
+    private static final List<String> GENERIC_FILE_ADDITION_ACTIONS = List.of(
+            "增加一个", "添加一个"
+    );
+    private static final List<String> GENERIC_FILE_CREATION_TARGETS = List.of(
+            "java文件", "java 文件", "python文件", "python 文件", "配置文件", "文本文件",
+            "源码文件", "readme", "java类", "java 类"
+    );
     private static final Pattern EXPLICIT_RELATIVE_FILE_REFERENCE = Pattern.compile(
             "(?<![A-Za-z0-9_.\\\\/-])(?:[A-Za-z0-9_.-]+[\\\\/])*[A-Za-z0-9_-]+\\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_.-])"
     );
@@ -58,7 +70,7 @@ public final class CliIntentRouter {
             "是什么", "是干什么", "有什么区别", "一般怎么", "怎么写"
     );
     private static final List<String> GENERAL_TECHNICAL_QUESTION_SIGNALS = List.of(
-            "怎么", "如何", "什么是", "是什么", "有什么区别"
+            "怎么", "如何", "什么是", "是什么", "有什么区别", "需要注意什么"
     );
     private static final List<String> CONTEXT_DEPENDENT_ACTIONS = List.of(
             "读取", "读", "查看", "看", "打开", "分析", "检查", "修改", "改", "处理", "继续",
@@ -170,8 +182,16 @@ public final class CliIntentRouter {
 
     private static boolean hasExplicitFileCreation(String message) {
         return containsAny(message, EXPLICIT_FILE_CREATION)
-                || (containsAny(message, List.of("创建", "新建", "create"))
-                && hasExplicitFileReference(message));
+                || (containsAny(message, FILE_CREATION_ACTIONS)
+                && (hasExplicitFileReference(message) || hasGenericFileCreationTarget(message))
+                && !isGeneralTechnicalQuestion(message))
+                || (containsAny(message, GENERIC_FILE_ADDITION_ACTIONS)
+                && hasGenericFileCreationTarget(message)
+                && !isGeneralTechnicalQuestion(message));
+    }
+
+    private static boolean hasGenericFileCreationTarget(String message) {
+        return containsAny(message, GENERIC_FILE_CREATION_TARGETS);
     }
 
     private static boolean hasExplicitFileReference(String message) {
