@@ -16,40 +16,40 @@ import java.util.Objects;
  * Small, process-local workspace reference handoff for the CLI profiles.
  * It deliberately keeps only tool-resolved relative paths, never model chat history.
  */
-final class CliWorkingContext {
+public final class CliWorkingContext {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private List<String> lastResolvedFiles = List.of();
     private String lastResolvedFile;
 
-    void observe(AgentTrajectory trajectory) {
+    public void observe(AgentTrajectory trajectory) {
         Objects.requireNonNull(trajectory, "trajectory must not be null");
         trajectory.steps().stream()
                 .filter(step -> step.actionType() == AgentActionType.TOOL_CALL)
                 .forEach(this::observe);
     }
 
-    void clear() {
+    public void clear() {
         lastResolvedFiles = List.of();
         lastResolvedFile = null;
     }
 
-    List<String> lastResolvedFiles() {
+    public List<String> lastResolvedFiles() {
         return lastResolvedFiles;
     }
 
-    String lastResolvedFile() {
+    public String lastResolvedFile() {
         return lastResolvedFile;
     }
 
-    boolean hasContextualFileReference(String input) {
+    public boolean hasContextualFileReference(String input) {
         String text = Objects.requireNonNull(input, "input must not be null").toLowerCase(java.util.Locale.ROOT);
         return text.matches("(?s).*?(这个|该|刚刚找到的|刚才那个|这些)\\s*(?:[a-z0-9+#.-]+\\s*)?文件.*")
                 || text.contains("里面")
                 || text.contains("this file");
     }
 
-    String contextualPrompt() {
+    public String contextualPrompt() {
         if (lastResolvedFile != null) {
             return "Recent workspace context:\n"
                     + "The previous workspace operation resolved the referenced file to:\n"
