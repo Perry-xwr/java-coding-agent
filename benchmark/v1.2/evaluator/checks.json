@@ -1,7 +1,7 @@
 [
   {"taskId":"dev_01_auto_chat","routes":["CHAT"],"forbiddenTools":["read_file","apply_patch"],"requireCompletion":true},
   {"taskId":"dev_02_auto_read","routes":["READ"],"requiredTools":["read_file"],"forbiddenTools":["apply_patch","create_file"],"requireCompletion":true},
-  {"taskId":"dev_03_auto_code","routes":["CODE"],"orderedToolSubsequence":["read_file","apply_patch","read_file","run_maven_test"],"files":[{"path":"src/main/java/bench/Calculator.java","exists":true,"notContains":["a-b"],"anyContains":["a+b","a + b"]}],"requireCompletion":true,"requireMavenFinalPass":true},
+  {"taskId":"dev_03_auto_code","routes":["CODE"],"orderedToolSubsequence":["read_file","apply_patch"],"files":[{"path":"src/main/java/bench/Calculator.java","exists":true,"notContains":["a-b"],"anyContains":["a+b","a + b"]}],"requireCompletion":true,"requireMavenFinalPass":true},
   {"taskId":"dev_04_read_to_code_followup","routes":["READ","CODE"],"requiredTools":["read_file","apply_patch","run_maven_test"],"files":[{"path":"src/main/java/bench/Config.java","exists":true,"contains":["8080"]}],"requireCompletion":true,"requireMavenFinalPass":true},
   {"taskId":"dev_05_find_python_files","routes":["READ"],"requiredTools":["find_files","read_file"],"orderedToolSubsequence":["find_files","read_file"],"requireCompletion":true},
   {"taskId":"dev_06_search_todo","routes":["READ"],"requiredTools":["search_code"],"forbiddenTools":["apply_patch"],"requireCompletion":true},

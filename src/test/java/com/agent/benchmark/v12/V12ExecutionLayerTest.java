@@ -204,6 +204,58 @@ class V12ExecutionLayerTest {
         assertEquals(V12FailureOwner.AGENT_POLICY,diagnosis.owner());
     }
 
+    @Test
+    void javaMutationContractAcceptsEitherPostMutationEvidenceOrder() throws Exception {
+        String path="src/main/java/bench/Calculator.java";
+        assertTrue(evaluateJavaContract(List.of(
+                toolStepWithPath(1,"read_file",path,ToolResult.success("old")),
+                toolStepWithPath(2,"apply_patch",path,ToolResult.success("changed")),
+                toolStepWithPath(3,"read_file",path,ToolResult.success("fresh")),
+                toolStep(4,"run_maven_test",ToolResult.success("BUILD SUCCESS")), finalStep(5))).passed());
+        assertTrue(evaluateJavaContract(List.of(
+                toolStepWithPath(1,"read_file",path,ToolResult.success("old")),
+                toolStepWithPath(2,"apply_patch",path,ToolResult.success("changed")),
+                toolStep(3,"run_maven_test",ToolResult.success("BUILD SUCCESS")),
+                toolStepWithPath(4,"read_file",path,ToolResult.success("fresh")), finalStep(5))).passed());
+    }
+
+    @Test
+    void javaMutationContractRejectsMissingOrStaleEvidence() throws Exception {
+        String path="src/main/java/bench/Calculator.java";
+        assertFalse(evaluateJavaContract(List.of(
+                toolStepWithPath(1,"read_file",path,ToolResult.success("old")),
+                toolStepWithPath(2,"apply_patch",path,ToolResult.success("changed")), finalStep(3))).passed());
+        assertFalse(evaluateJavaContract(List.of(
+                toolStepWithPath(1,"read_file",path,ToolResult.success("old")),
+                toolStepWithPath(2,"apply_patch",path,ToolResult.success("changed")),
+                toolStepWithPath(3,"read_file",path,ToolResult.success("fresh")), finalStep(4))).passed());
+        assertFalse(evaluateJavaContract(List.of(
+                toolStepWithPath(1,"read_file",path,ToolResult.success("old")),
+                toolStepWithPath(2,"apply_patch",path,ToolResult.success("changed")),
+                toolStep(3,"run_maven_test",ToolResult.success("BUILD SUCCESS")), finalStep(4))).passed());
+        assertFalse(evaluateJavaContract(List.of(
+                toolStepWithPath(1,"read_file",path,ToolResult.success("old")),
+                toolStep(2,"run_maven_test",ToolResult.success("BUILD SUCCESS")),
+                toolStepWithPath(3,"apply_patch",path,ToolResult.success("changed")),
+                toolStepWithPath(4,"read_file",path,ToolResult.success("fresh")), finalStep(5))).passed());
+    }
+
+    @Test
+    void validJavaTrajectoryBlamedOnOldOrderRuleIsEvaluatorFailure() {
+        String path="src/main/java/bench/Calculator.java";
+        List<AgentStep> steps=List.of(
+                toolStepWithPath(1,"read_file",path,ToolResult.success("old")),
+                toolStepWithPath(2,"apply_patch",path,ToolResult.success("changed")),
+                toolStep(3,"run_maven_test",ToolResult.success("BUILD SUCCESS")),
+                toolStepWithPath(4,"read_file",path,ToolResult.success("fresh")), finalStep(5));
+        V12TurnResult turn=new V12TurnResult(1,"x",CliMode.CODE,CliMode.CODE,null,null,trajectory(steps));
+        V12FailureDiagnosis.Diagnosis diagnosis=V12FailureDiagnosis.classify(List.of(turn),
+                new V12EvaluationResult(false,List.of("tool order [read_file, apply_patch, run_maven_test, read_file]"),Map.of()));
+        assertEquals(V12FailureCategory.EVALUATOR_FAILURE,diagnosis.first());
+        assertEquals(V12FailureCategory.EVALUATOR_FAILURE,diagnosis.last());
+        assertEquals(V12FailureOwner.EVALUATOR,diagnosis.owner());
+    }
+
     private static V12Task task(String id,List<String> instructions,Map<String,String> fixture,V12Evaluator evaluator) {
         return new V12Task(id,V12Split.DEV,"test",fixture,instructions,null,List.of("expected"),evaluator,10,List.of("test"),List.of("pass"));
     }
@@ -213,5 +265,12 @@ class V12ExecutionLayerTest {
     private static List<AgentStep> toolSteps(List<V12TurnResult> turns){return turns.stream().flatMap(t->t.trajectory().steps().stream()).filter(s->s.actionType()==AgentActionType.TOOL_CALL).toList();}
     private static AgentStep toolStep(int index,String name,ToolResult result){return new AgentStep(index,AgentActionType.TOOL_CALL,name,"id","{}",Map.of(),result,null,null,0,0);}
     private static AgentStep toolStepWithPath(int index,String name,String path,ToolResult result){return new AgentStep(index,AgentActionType.TOOL_CALL,name,"id","{}",Map.of("path",path),result,null,null,0,0);}
+    private static AgentStep finalStep(int index){return new AgentStep(index,AgentActionType.FINAL_ANSWER,null,null,null,Map.of(),null,"done",null,0,0);}
+    private V12EvaluationResult evaluateJavaContract(List<AgentStep> steps) throws Exception {
+        V12Task task=task("java-contract",List.of("fix"),Map.of("pom.xml","<project/>","src/main/java/bench/Calculator.java","old"),V12Evaluator.HIDDEN_FILE_CONTENT);
+        V12EvaluationCheck check=new V12EvaluationCheck(task.id(),List.of(CliMode.CODE),List.of(),List.of(),List.of(),List.of(),true,false,true,false);
+        V12TurnResult turn=new V12TurnResult(1,"fix",CliMode.CODE,CliMode.CODE,null,null,trajectory(steps));
+        return new V12DeterministicEvaluator().evaluate(task,temporary,List.of(turn),check);
+    }
     private static AgentTrajectory trajectory(List<AgentStep> steps){return new AgentTrajectory("id","task",steps,"done",TerminationReason.FINAL_ANSWER,true,null,0,1);}
 }

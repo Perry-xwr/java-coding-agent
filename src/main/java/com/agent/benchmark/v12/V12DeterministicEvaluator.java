@@ -41,6 +41,18 @@ public final class V12DeterministicEvaluator {
         if (check.requireMavenFailure() && !mavenFailure) failed.add("required Maven failure absent");
         if (check.requireMavenFinalPass() && !mavenFinalPass) failed.add("final Maven pass absent");
         if (check.requireRecoveryAfterFailure() && !recovery) failed.add("meaningful recovery after Maven failure absent");
+        if (check.requireMavenFinalPass()) {
+            V12JavaMutationContract.Assessment contract = V12JavaMutationContract.assess(
+                    turns.stream().flatMap(t -> t.trajectory().steps().stream()).toList(),
+                    turns.stream().allMatch(t -> t.trajectory().completed())
+            );
+            if (contract.applicable()) {
+                if (!contract.sourceReadBeforeMutation()) failed.add("source read before latest Java mutation absent");
+                if (!contract.rereadAfterMutation()) failed.add("post-mutation reread absent");
+                if (!contract.mavenPassAfterMutation()) failed.add("Maven verification after latest mutation absent");
+                if (!contract.finalAfterRequirements()) failed.add("final preceded Java mutation requirements");
+            }
+        }
         if (task.evaluator()==V12Evaluator.HIDDEN_MAVEN || task.evaluator()==V12Evaluator.HIDDEN_MAVEN_WITH_RECOVERY) {
             if(hiddenMavenVerifier==null) failed.add("hidden Maven verifier unavailable");
             else {

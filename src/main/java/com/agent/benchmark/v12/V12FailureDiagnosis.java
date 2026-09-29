@@ -29,6 +29,12 @@ final class V12FailureDiagnosis {
             return new Diagnosis(V12FailureCategory.PREMATURE_FINAL,last,V12FailureOwner.AGENT_POLICY,
                     verificationGuard.errorMessage());
         }
+        boolean completed=turns.stream().allMatch(t->t.trajectory().completed());
+        if (evaluation.failedCriteria().stream().anyMatch(s->s.startsWith("tool order"))
+                && V12JavaMutationContract.assess(steps,completed).satisfied()) {
+            return new Diagnosis(V12FailureCategory.EVALUATOR_FAILURE,V12FailureCategory.EVALUATOR_FAILURE,
+                    V12FailureOwner.EVALUATOR,String.join("; ",evaluation.failedCriteria()));
+        }
         if (turns.stream().anyMatch(t->t.trajectory().terminationReason()==TerminationReason.MAX_STEPS))
             return new Diagnosis(V12FailureCategory.UNKNOWN,V12FailureCategory.MAX_STEP_TERMINATION,V12FailureOwner.UNKNOWN,"Agent reached max steps after an unclassified earlier deviation");
         if (turns.stream().anyMatch(t->t.trajectory().terminationReason()==TerminationReason.LLM_ERROR))
