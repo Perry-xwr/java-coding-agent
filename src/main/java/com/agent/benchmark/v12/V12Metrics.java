@@ -17,7 +17,7 @@ final class V12Metrics {
         List<AgentStep> calls = steps.stream().filter(s -> s.actionType()==AgentActionType.TOOL_CALL).toList();
         Map<String,Integer> usage = new LinkedHashMap<>();
         LinkedHashSet<String> files = new LinkedHashSet<>();
-        int errors=0, invalid=0, mutations=0, rereads=0, stale=0, convergence=0, mavenFailures=0;
+        int errors=0, invalid=0, mutations=0, rereads=0, autoRereads=0, stale=0, convergence=0, mavenFailures=0;
         for (AgentStep step:calls) {
             usage.merge(step.toolName(),1,Integer::sum);
             if (step.toolResult()!=null && !step.toolResult().success()) {
@@ -31,6 +31,12 @@ final class V12Metrics {
                     && "STALE_EDIT_CONTEXT".equals(step.toolResult().errorCode().name())) stale++;
             if ("run_maven_test".equals(step.toolName()) && step.toolResult()!=null && !step.toolResult().success()) mavenFailures++;
         }
+        for (AgentStep step:steps) if (step.actionType()==AgentActionType.AUTO_REREAD) {
+            rereads++;
+            autoRereads++;
+            Object path=step.arguments().get("path"); if(path instanceof String p) files.add(p);
+            if (step.toolResult()!=null && !step.toolResult().success()) errors++;
+        }
         for (AgentStep step:steps) if (step.actionType()==AgentActionType.RUNTIME_FEEDBACK && step.errorMessage()!=null
                 && step.errorMessage().contains("POST_EDIT_CONVERGENCE")) convergence++;
         boolean mavenFinalPass = calls.stream().filter(s->"run_maven_test".equals(s.toolName())).reduce((a,b)->b)
@@ -41,7 +47,8 @@ final class V12Metrics {
         out.put("finalResponseProduced",turns.stream().allMatch(t->t.trajectory().finalAnswer()!=null));
         out.put("toolCallCount",calls.size()); out.put("toolErrorCount",errors); out.put("invalidToolCallCount",invalid);
         out.put("toolUsageDistribution",usage); out.put("mutationCount",mutations); out.put("filesTouched",List.copyOf(files));
-        out.put("rereadCount",rereads); out.put("staleContextGuardCount",stale); out.put("convergenceGuardCount",convergence);
+        out.put("rereadCount",rereads); out.put("autoRereadCount",autoRereads);
+        out.put("staleContextGuardCount",stale); out.put("convergenceGuardCount",convergence);
         out.put("mavenInvocationCount",usage.getOrDefault("run_maven_test",0)); out.put("mavenFailureCount",mavenFailures);
         out.put("mavenFinalPass",mavenFinalPass); out.put("recoveryAttempted",mavenFailures>0 && calls.size()>1);
         out.put("recoverySuccess",mavenFailures>0 && mavenFinalPass);

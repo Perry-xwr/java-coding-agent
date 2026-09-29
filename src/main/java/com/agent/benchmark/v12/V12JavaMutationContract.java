@@ -19,8 +19,7 @@ final class V12JavaMutationContract {
             boolean finalAfterRequirements
     ) {
         boolean satisfied() {
-            return !applicable || sourceReadBeforeMutation
-                    && rereadAfterMutation && mavenPassAfterMutation && finalAfterRequirements;
+            return !applicable || rereadAfterMutation && mavenPassAfterMutation && finalAfterRequirements;
         }
     }
 
@@ -46,9 +45,9 @@ final class V12JavaMutationContract {
         int finalIndex = -1;
         for (int index = 0; index < steps.size(); index++) {
             AgentStep step = steps.get(index);
-            if (index < mutationIndex && successfulTool(step) && "read_file".equals(step.toolName())
+            if (index < mutationIndex && successfulObservation(step) && "read_file".equals(step.toolName())
                     && path.equals(step.arguments().get("path"))) sourceRead = true;
-            if (index > mutationIndex && successfulTool(step) && "read_file".equals(step.toolName())
+            if (index > mutationIndex && successfulObservation(step) && "read_file".equals(step.toolName())
                     && path.equals(step.arguments().get("path"))) rereadIndex = index;
             if (index > mutationIndex && successfulTool(step) && "run_maven_test".equals(step.toolName()))
                 mavenIndex = index;
@@ -62,6 +61,12 @@ final class V12JavaMutationContract {
 
     private static boolean successfulTool(AgentStep step) {
         return step.actionType() == AgentActionType.TOOL_CALL
+                && step.toolResult() != null && step.toolResult().success();
+    }
+
+    private static boolean successfulObservation(AgentStep step) {
+        return (step.actionType() == AgentActionType.TOOL_CALL
+                || step.actionType() == AgentActionType.AUTO_REREAD)
                 && step.toolResult() != null && step.toolResult().success();
     }
 

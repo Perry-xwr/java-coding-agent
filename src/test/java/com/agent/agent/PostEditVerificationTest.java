@@ -27,7 +27,7 @@ class PostEditVerificationTest {
     Path workspace;
 
     @Test
-    void mutationCannotFinalizeUntilChangedFileIsReread() throws Exception {
+    void successfulMutationIsAutomaticallyRereadBeforeFinalization() throws Exception {
         Files.writeString(workspace.resolve("App.java"), "old");
         AgentRunResult result = agent(List.of(
                 call("patch", "apply_patch", patch("App.java", "old", "new")),
@@ -39,7 +39,9 @@ class PostEditVerificationTest {
 
         assertTrue(result.trajectory().completed());
         assertEquals("Verified.", result.finalAnswer());
-        assertEquals(1, feedbackCount(result, "POST_MUTATION_READ_GUARD:"));
+        assertEquals(0, feedbackCount(result, "POST_MUTATION_READ_GUARD:"));
+        assertEquals(1, result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.AUTO_REREAD).count());
     }
 
     @Test

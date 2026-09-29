@@ -173,6 +173,28 @@ class V12ExecutionLayerTest {
     }
 
     @Test
+    void scriptedDev10RecoversWithAutomaticRereadAndPassesHiddenEvaluation() throws Exception {
+        V12BenchmarkSuite suite=new V12BenchmarkTaskLoader().load(Path.of("benchmark/v1.2/manifest.json"));
+        V12Task task=suite.tasks().stream().filter(t->t.id().equals("dev_10_java_maven_recovery")).findFirst().orElseThrow();
+        Path workspace=new V12FixtureWorkspace().reset(task,temporary.resolve("runs"),"dev10-scripted");
+        V12RuntimeHarness runtime=new V12RuntimeHarness(scripted(
+                call("run_maven_test",Map.of()),
+                call("apply_patch",Map.of("path","src/main/java/demo/Greeter.java",
+                        "oldText","return \"hi\";","newText","return \"hello\";")),
+                call("run_maven_test",Map.of()),finalAnswer("recovered")),workspace);
+        List<V12TurnResult> turns=runtime.run(task);
+
+        assertTrue(turns.get(0).trajectory().completed());
+        assertEquals(1,turns.get(0).trajectory().steps().stream()
+                .filter(s->s.actionType()==AgentActionType.AUTO_REREAD).count());
+        V12EvaluationCheck check=new V12EvaluationCheckLoader().load(Path.of("benchmark/v1.2/evaluator/checks.json")).get(task.id());
+        V12HiddenMavenVerifier hidden=new V12HiddenMavenVerifier(
+                Path.of("benchmark/v1.2/evaluator/hidden"),Path.of(".m2/repository"));
+        V12EvaluationResult evaluation=new V12DeterministicEvaluator(hidden).evaluate(task,workspace,turns,check);
+        assertTrue(evaluation.passed(),evaluation.failedCriteria().toString());
+    }
+
+    @Test
     void dev03IncorrectRepairFailsDeterministicEvaluator() throws Exception {
         V12BenchmarkSuite suite=new V12BenchmarkTaskLoader().load(Path.of("benchmark/v1.2/manifest.json"));
         V12Task task=suite.tasks().stream().filter(t->t.id().equals("dev_03_auto_code")).findFirst().orElseThrow();
@@ -201,6 +223,23 @@ class V12ExecutionLayerTest {
                 new V12EvaluationResult(false,List.of("final Maven pass absent"),Map.of()));
         assertEquals(V12FailureCategory.PREMATURE_FINAL,diagnosis.first());
         assertEquals(V12FailureCategory.MAX_STEP_TERMINATION,diagnosis.last());
+        assertEquals(V12FailureOwner.AGENT_POLICY,diagnosis.owner());
+    }
+
+    @Test
+    void classifiesLegacyPostMutationRereadGuardAsPrematureFinal() {
+        String path="src/main/java/demo/Greeter.java";
+        List<AgentStep> steps=List.of(
+                toolStepWithPath(1,"apply_patch",path,ToolResult.success("changed")),
+                new AgentStep(2,AgentActionType.RUNTIME_FEEDBACK,null,null,null,Map.of(),null,"done",
+                        "POST_MUTATION_READ_GUARD: reread required",0,0),
+                new AgentStep(3,AgentActionType.RUNTIME_FEEDBACK,null,null,null,Map.of(),null,"done",
+                        "POST_MUTATION_READ_FAILURE: reread missing",0,0));
+        V12TurnResult turn=new V12TurnResult(1,"x",CliMode.CODE,CliMode.CODE,null,null,
+                new AgentTrajectory("id","task",steps,"failed",TerminationReason.FINAL_ANSWER,false,null,0,1));
+        V12FailureDiagnosis.Diagnosis diagnosis=V12FailureDiagnosis.classify(List.of(turn),
+                new V12EvaluationResult(false,List.of("post-mutation reread absent"),Map.of()));
+        assertEquals(V12FailureCategory.PREMATURE_FINAL,diagnosis.first());
         assertEquals(V12FailureOwner.AGENT_POLICY,diagnosis.owner());
     }
 

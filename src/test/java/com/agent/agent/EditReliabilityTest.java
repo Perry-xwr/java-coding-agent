@@ -145,7 +145,9 @@ class EditReliabilityTest {
         assertEquals("new", Files.readString(workspace.resolve("App.java")));
         assertFalse(toolSteps(result).stream().anyMatch(step ->
                 "unsafe-followup".equals(step.toolCallId())));
-        assertEquals(1, feedbackCount(result, "POST_MUTATION_READ_REQUIRED:"));
+        assertEquals(0, feedbackCount(result, "POST_MUTATION_READ_REQUIRED:"));
+        assertEquals(1, result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.AUTO_REREAD).count());
     }
 
     private Agent agent(List<LLMResponse> responses, List<ProcessExecutionResult> processResults) {

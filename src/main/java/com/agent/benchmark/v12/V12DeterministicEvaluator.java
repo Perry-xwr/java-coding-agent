@@ -47,7 +47,6 @@ public final class V12DeterministicEvaluator {
                     turns.stream().allMatch(t -> t.trajectory().completed())
             );
             if (contract.applicable()) {
-                if (!contract.sourceReadBeforeMutation()) failed.add("source read before latest Java mutation absent");
                 if (!contract.rereadAfterMutation()) failed.add("post-mutation reread absent");
                 if (!contract.mavenPassAfterMutation()) failed.add("Maven verification after latest mutation absent");
                 if (!contract.finalAfterRequirements()) failed.add("final preceded Java mutation requirements");

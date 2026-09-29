@@ -29,6 +29,17 @@ final class V12FailureDiagnosis {
             return new Diagnosis(V12FailureCategory.PREMATURE_FINAL,last,V12FailureOwner.AGENT_POLICY,
                     verificationGuard.errorMessage());
         }
+        AgentStep rereadGuard=steps.stream()
+                .filter(s->s.actionType()==AgentActionType.RUNTIME_FEEDBACK && s.errorMessage()!=null)
+                .filter(s->s.errorMessage().startsWith("POST_MUTATION_READ_GUARD:")
+                        || s.errorMessage().startsWith("POST_MUTATION_READ_FAILURE:"))
+                .findFirst().orElse(null);
+        if (rereadGuard!=null) {
+            V12FailureCategory last=turns.stream().anyMatch(t->t.trajectory().terminationReason()==TerminationReason.MAX_STEPS)
+                    ? V12FailureCategory.MAX_STEP_TERMINATION : V12FailureCategory.PREMATURE_FINAL;
+            return new Diagnosis(V12FailureCategory.PREMATURE_FINAL,last,V12FailureOwner.AGENT_POLICY,
+                    rereadGuard.errorMessage());
+        }
         boolean completed=turns.stream().allMatch(t->t.trajectory().completed());
         if (evaluation.failedCriteria().stream().anyMatch(s->s.startsWith("tool order"))
                 && V12JavaMutationContract.assess(steps,completed).satisfied()) {
@@ -51,7 +62,8 @@ final class V12FailureDiagnosis {
         String mutatedPath=null;
         boolean reread=false;
         for (AgentStep step:steps) {
-            if (step.actionType()==AgentActionType.TOOL_CALL && step.toolResult()!=null && step.toolResult().success()) {
+            if ((step.actionType()==AgentActionType.TOOL_CALL || step.actionType()==AgentActionType.AUTO_REREAD)
+                    && step.toolResult()!=null && step.toolResult().success()) {
                 Object path=step.arguments().get("path");
                 if (mutations.contains(step.toolName()) && path instanceof String p) {
                     mutatedPath=p;
