@@ -154,6 +154,56 @@ class V12ExecutionLayerTest {
         assertFalse(Files.exists(workspace.resolve("src/test/java/demo/GreeterHiddenTest.java")));
     }
 
+    @Test
+    void dev03CorrectRepairSatisfiesJavaVerificationGuardAndEvaluator() throws Exception {
+        V12BenchmarkSuite suite=new V12BenchmarkTaskLoader().load(Path.of("benchmark/v1.2/manifest.json"));
+        V12Task task=suite.tasks().stream().filter(t->t.id().equals("dev_03_auto_code")).findFirst().orElseThrow();
+        Path workspace=new V12FixtureWorkspace().reset(task,temporary.resolve("runs"),"dev03-offline");
+        V12RuntimeHarness runtime=new V12RuntimeHarness(scripted(
+                call("read_file",Map.of("path","src/main/java/bench/Calculator.java")),
+                call("apply_patch",Map.of("path","src/main/java/bench/Calculator.java","oldText","return a-b","newText","return a+b")),
+                call("read_file",Map.of("path","src/main/java/bench/Calculator.java")),
+                call("run_maven_test",Map.of()), finalAnswer("done")),workspace);
+        List<V12TurnResult> turns=runtime.run(task);
+        assertTrue(turns.get(0).trajectory().completed(),turns.get(0).trajectory().finalAnswer());
+        AgentStep maven=toolSteps(turns).stream().filter(s->"run_maven_test".equals(s.toolName())).findFirst().orElseThrow();
+        assertTrue(maven.toolResult().success(),maven.toolResult().errorMessage());
+        V12EvaluationCheck check=new V12EvaluationCheckLoader().load(Path.of("benchmark/v1.2/evaluator/checks.json")).get(task.id());
+        assertTrue(new V12DeterministicEvaluator().evaluate(task,workspace,turns,check).passed());
+    }
+
+    @Test
+    void dev03IncorrectRepairFailsDeterministicEvaluator() throws Exception {
+        V12BenchmarkSuite suite=new V12BenchmarkTaskLoader().load(Path.of("benchmark/v1.2/manifest.json"));
+        V12Task task=suite.tasks().stream().filter(t->t.id().equals("dev_03_auto_code")).findFirst().orElseThrow();
+        Path workspace=new V12FixtureWorkspace().reset(task,temporary.resolve("runs"),"dev03-wrong");
+        List<AgentStep> steps=List.of(
+                toolStep(1,"read_file",ToolResult.success("source")),
+                toolStepWithPath(2,"apply_patch","src/main/java/bench/Calculator.java",ToolResult.success("changed")),
+                toolStepWithPath(3,"read_file","src/main/java/bench/Calculator.java",ToolResult.success("still wrong")),
+                toolStep(4,"run_maven_test",ToolResult.success("BUILD SUCCESS")));
+        V12TurnResult turn=new V12TurnResult(1,"x",CliMode.CODE,CliMode.CODE,null,null,trajectory(steps));
+        V12EvaluationCheck check=new V12EvaluationCheckLoader().load(Path.of("benchmark/v1.2/evaluator/checks.json")).get(task.id());
+        assertFalse(new V12DeterministicEvaluator().evaluate(task,workspace,List.of(turn),check).passed());
+    }
+
+    @Test
+    void classifiesPrematureFinalFromStructuredJavaVerificationGuard() {
+        String path="src/main/java/bench/Calculator.java";
+        List<AgentStep> steps=List.of(
+                toolStepWithPath(1,"apply_patch",path,ToolResult.success("changed")),
+                toolStepWithPath(2,"read_file",path,ToolResult.success("fresh")),
+                new AgentStep(3,AgentActionType.RUNTIME_FEEDBACK,null,null,null,Map.of(),null,"done",
+                        "JAVA_VERIFICATION_GUARD: run Maven",0,0));
+        AgentTrajectory trajectory=new AgentTrajectory("id","task",steps,"done",TerminationReason.MAX_STEPS,false,null,0,1);
+        V12TurnResult turn=new V12TurnResult(1,"x",CliMode.CODE,CliMode.CODE,null,null,trajectory);
+        V12FailureDiagnosis.Diagnosis diagnosis=V12FailureDiagnosis.classify(List.of(turn),
+                new V12EvaluationResult(false,List.of("final Maven pass absent"),Map.of()));
+        assertEquals(V12FailureCategory.PREMATURE_FINAL,diagnosis.first());
+        assertEquals(V12FailureCategory.MAX_STEP_TERMINATION,diagnosis.last());
+        assertEquals(V12FailureOwner.AGENT_POLICY,diagnosis.owner());
+    }
+
     private static V12Task task(String id,List<String> instructions,Map<String,String> fixture,V12Evaluator evaluator) {
         return new V12Task(id,V12Split.DEV,"test",fixture,instructions,null,List.of("expected"),evaluator,10,List.of("test"),List.of("pass"));
     }
@@ -162,5 +212,6 @@ class V12ExecutionLayerTest {
     private static LLMResponse call(String name,Map<String,Object> args) throws Exception {return new LLMResponse("",List.of(new ToolCall(name+"-id",name,new ObjectMapper().writeValueAsString(args))));}
     private static List<AgentStep> toolSteps(List<V12TurnResult> turns){return turns.stream().flatMap(t->t.trajectory().steps().stream()).filter(s->s.actionType()==AgentActionType.TOOL_CALL).toList();}
     private static AgentStep toolStep(int index,String name,ToolResult result){return new AgentStep(index,AgentActionType.TOOL_CALL,name,"id","{}",Map.of(),result,null,null,0,0);}
+    private static AgentStep toolStepWithPath(int index,String name,String path,ToolResult result){return new AgentStep(index,AgentActionType.TOOL_CALL,name,"id","{}",Map.of("path",path),result,null,null,0,0);}
     private static AgentTrajectory trajectory(List<AgentStep> steps){return new AgentTrajectory("id","task",steps,"done",TerminationReason.FINAL_ANSWER,true,null,0,1);}
 }

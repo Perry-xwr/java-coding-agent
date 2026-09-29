@@ -14,16 +14,16 @@ The runner is safe by default: omitting `--provider` selects a deterministic no-
 
 ```powershell
 # One task, fake provider
-mvn exec:java '-Dexec.mainClass=com.agent.benchmark.v12.V12BenchmarkMain' '-Dexec.args=--task=dev_01_auto_chat --provider=fake'
+mvn exec:java@v12-benchmark '-Dexec.args=--task=dev_01_auto_chat --provider=fake'
 
 # DEV, fake provider
-mvn exec:java '-Dexec.mainClass=com.agent.benchmark.v12.V12BenchmarkMain' '-Dexec.args=--split=dev --provider=fake'
+mvn exec:java@v12-benchmark '-Dexec.args=--split=dev --provider=fake'
 
 # TEST requires an additional explicit gate even with fake provider
-mvn exec:java '-Dexec.mainClass=com.agent.benchmark.v12.V12BenchmarkMain' '-Dexec.args=--split=test --provider=fake --confirm-test'
+mvn exec:java@v12-benchmark '-Dexec.args=--split=test --provider=fake --confirm-test'
 
 # Future real DEV example — do not run without explicit cost approval
-mvn exec:java '-Dexec.mainClass=com.agent.benchmark.v12.V12BenchmarkMain' '-Dexec.args=--split=dev --provider=real --allow-real --max-provider-requests=65 --runtime-commit=<commit>'
+mvn exec:java@v12-benchmark '-Dexec.args=--split=dev --provider=real --allow-real --max-provider-requests=65 --runtime-commit=<commit>'
 ```
 
 Results are written below `benchmark-runs/v1.2/<run-id>/` as a summary, JSONL task records, sanitized trajectories, and a failure report. The request cap is enforced before delegating a provider call. TEST is never selected by default and requires `--confirm-test`.

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -59,6 +60,43 @@ class V12BenchmarkProtocolTest {
         assertEquals(CliMode.READ, harness.route("读取 README.md").mode());
         assertEquals(CliMode.CODE, harness.route("修复 Calculator.java").mode());
         assertTrue(harness.sessionFor(harness.route("读取 README.md")) == harness.sessions().read());
+    }
+
+    @Test
+    void javaMutationFixturesUseMavenLayoutAndDev03BuildsOffline() throws Exception {
+        V12BenchmarkSuite suite = new V12BenchmarkTaskLoader().load(manifest());
+        List<V12Task> javaMutationTasks = suite.tasks().stream()
+                .filter(t -> t.capabilities().contains("maven_verification") || t.capabilities().contains("maven_recovery"))
+                .toList();
+        assertFalse(javaMutationTasks.isEmpty());
+        for (V12Task task : javaMutationTasks) {
+            assertTrue(task.initialFixture().containsKey("pom.xml"), task.id());
+            assertTrue(task.initialFixture().keySet().stream().anyMatch(p -> p.startsWith("src/main/java/")), task.id());
+        }
+
+        V12Task task = suite.tasks().stream().filter(t -> t.id().equals("dev_03_auto_code")).findFirst().orElseThrow();
+        Path workspace = new V12FixtureWorkspace().reset(task, temporary.resolve("runs"), "fixture-contract");
+        Process process = new ProcessBuilder(mavenExecutable(), "-o", "-q",
+                "-Dmaven.repo.local=" + Path.of(".m2", "repository").toAbsolutePath().normalize(), "test")
+                .directory(workspace.toFile()).redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(0, process.waitFor(), output);
+    }
+
+    @Test
+    void launcherAndGeneratedRunIgnoreAreExplicitAndDoNotChangeDefaultMain() throws Exception {
+        String pom = Files.readString(Path.of("pom.xml"));
+        assertTrue(pom.contains("<mainClass>com.agent.Main</mainClass>"));
+        assertTrue(pom.contains("<id>v12-benchmark</id>"));
+        assertTrue(pom.contains("<mainClass>com.agent.benchmark.v12.V12BenchmarkMain</mainClass>"));
+        assertTrue(Files.readString(Path.of("benchmark", "v1.2", "README.md"))
+                .contains("exec:java@v12-benchmark"));
+        assertTrue(Files.readAllLines(Path.of(".gitignore")).stream()
+                .map(String::trim).anyMatch("benchmark-runs/"::equals));
+    }
+
+    private static String mavenExecutable() {
+        return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win") ? "mvn.cmd" : "mvn";
     }
 
     private static Path manifest() {
