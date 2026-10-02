@@ -176,12 +176,13 @@ public final class InteractiveCli {
 
     private void runAgent(String task) {
         try {
+            workingContext.observeUserTask(task);
             CliMode sessionMode = resolveSessionMode(task);
             if (activeMode == CliMode.AUTO) {
                 ui.printSystemMessage("AUTO -> " + sessionMode);
             }
             AgentRunResult result = sessions.session(sessionMode).runWithTrajectory(
-                    taskWithWorkspaceContext(task)
+                    taskWithWorkspaceContext(task, sessionMode)
             );
             workingContext.observe(result.trajectory());
             if (result.trajectory().terminationReason() == TerminationReason.LLM_ERROR) {
@@ -223,11 +224,12 @@ public final class InteractiveCli {
                 && (!workingContext.lastResolvedFiles().isEmpty());
     }
 
-    private String taskWithWorkspaceContext(String task) {
-        if (activeMode != CliMode.AUTO || !hasUsableContextualReference(task)) {
+    private String taskWithWorkspaceContext(String task, CliMode sessionMode) {
+        if ((sessionMode != CliMode.READ && sessionMode != CliMode.CODE)
+                || !workingContext.hasWorkspaceFacts()) {
             return task;
         }
-        String context = workingContext.contextualPrompt();
+        String context = workingContext.compactSnapshot();
         return context.isBlank() ? task : context + "\n\nUser request:\n" + task;
     }
 
