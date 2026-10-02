@@ -37,6 +37,8 @@ public final class CliWorkingContext {
                     + "\\.(?:java|py|md|cpp|c|h|hpp|json|ya?ml|xml|properties|txt)|README(?:\\.md)?)"
     );
 
+    private final WorkingMemoryMode mode;
+
     private String activeTask;
     private List<String> explicitTargetFiles = List.of();
     private List<String> lastResolvedFiles = List.of();
@@ -46,8 +48,23 @@ public final class CliWorkingContext {
     private final Deque<ToolFailure> recentToolFailures = new ArrayDeque<>();
     private LastMutation lastMutation;
 
+    public CliWorkingContext() {
+        this(WorkingMemoryMode.STRUCTURED_MEMORY);
+    }
+
+    public CliWorkingContext(WorkingMemoryMode mode) {
+        this.mode = Objects.requireNonNull(mode, "mode must not be null");
+    }
+
+    public WorkingMemoryMode mode() {
+        return mode;
+    }
+
     /** Records the raw current user task and any explicitly named workspace-relative file targets. */
     public void observeUserTask(String task) {
+        if (mode == WorkingMemoryMode.LEGACY_CONTEXT) {
+            return;
+        }
         activeTask = requireNonBlank(task, "task must not be blank");
         List<String> targets = explicitTargets(task);
         if (!targets.isEmpty()) {
@@ -66,6 +83,11 @@ public final class CliWorkingContext {
         Objects.requireNonNull(toolName, "toolName must not be null");
         Objects.requireNonNull(arguments, "arguments must not be null");
         Objects.requireNonNull(result, "result must not be null");
+
+        if (mode == WorkingMemoryMode.LEGACY_CONTEXT) {
+            observeLegacyToolResult(toolName, arguments, result);
+            return;
+        }
 
         if (!result.success()) {
             recordFailure(toolName, pathFrom(arguments, result), result.errorCode());
@@ -130,6 +152,9 @@ public final class CliWorkingContext {
     }
 
     public boolean hasWorkspaceFacts() {
+        if (mode == WorkingMemoryMode.LEGACY_CONTEXT) {
+            return !lastResolvedFiles.isEmpty();
+        }
         return !discoveredFiles.isEmpty()
                 || !explicitTargetFiles.isEmpty()
                 || lastMutation != null
@@ -145,6 +170,9 @@ public final class CliWorkingContext {
 
     /** A concise deterministic prompt fragment; no model answer or full file text is included. */
     public String compactSnapshot() {
+        if (mode == WorkingMemoryMode.LEGACY_CONTEXT) {
+            return legacySnapshot();
+        }
         List<String> lines = new ArrayList<>();
         lines.add("Working memory:");
         if (activeTask != null) {
@@ -186,9 +214,58 @@ public final class CliWorkingContext {
         if (step.toolResult() == null || step.toolName() == null) {
             return;
         }
-        if (step.actionType() == AgentActionType.TOOL_CALL || step.actionType() == AgentActionType.AUTO_REREAD) {
+        if (mode == WorkingMemoryMode.LEGACY_CONTEXT && step.actionType() == AgentActionType.TOOL_CALL) {
+            observeLegacyToolResult(step.toolName(), step.arguments(), step.toolResult());
+        } else if (mode == WorkingMemoryMode.STRUCTURED_MEMORY
+                && (step.actionType() == AgentActionType.TOOL_CALL
+                || step.actionType() == AgentActionType.AUTO_REREAD)) {
             observeToolResult(step.toolName(), step.arguments(), step.toolResult());
         }
+    }
+
+    private void observeLegacyToolResult(String toolName, Map<String, Object> arguments, ToolResult result) {
+        if (!result.success()) {
+            return;
+        }
+        switch (toolName) {
+            case "find_files" -> observeLegacyFiles(parseFiles(result.output(), true));
+            case "read_file", "create_file", "apply_patch", "insert_after" -> {
+                String path = pathFrom(arguments, result);
+                if (path != null) {
+                    observeLegacyFiles(List.of(path));
+                }
+            }
+            default -> {
+                // Deliberately matches the pre-V1.4 handoff surface.
+            }
+        }
+    }
+
+    private void observeLegacyFiles(List<String> files) {
+        List<String> normalized = files.stream()
+                .map(CliWorkingContext::normalizedRelativePath)
+                .flatMap(java.util.Optional::stream)
+                .distinct()
+                .toList();
+        if (!normalized.isEmpty()) {
+            lastResolvedFiles = normalized;
+            lastResolvedFile = normalized.size() == 1 ? normalized.get(0) : null;
+        }
+    }
+
+    private String legacySnapshot() {
+        if (lastResolvedFile != null) {
+            return "Recent workspace context:\n"
+                    + "The previous workspace operation resolved the referenced file to:\n"
+                    + lastResolvedFile;
+        }
+        if (!lastResolvedFiles.isEmpty()) {
+            return "Recent workspace context:\n"
+                    + "The previous workspace operation resolved multiple candidate files: "
+                    + String.join(", ", lastResolvedFiles) + ".\n"
+                    + "Do not choose one arbitrarily; ask the user to clarify the target before reading or modifying a file.";
+        }
+        return "";
     }
 
     private void observeFindFiles(ToolResult result) {

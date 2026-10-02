@@ -132,17 +132,17 @@ public final class CliIntentRouter {
                 .find();
     }
 
-    boolean hasClearMutationIntent(String userMessage) {
+    public boolean hasClearMutationIntent(String userMessage) {
         return hasMutationIntent(Objects.requireNonNull(userMessage, "userMessage must not be null")
                 .toLowerCase(Locale.ROOT));
     }
 
-    boolean hasReadRequest(String userMessage) {
+    public boolean hasReadRequest(String userMessage) {
         return hasReadIntent(Objects.requireNonNull(userMessage, "userMessage must not be null")
                 .toLowerCase(Locale.ROOT));
     }
 
-    boolean hasExplicitWorkspaceTarget(String userMessage) {
+    public boolean hasExplicitWorkspaceTarget(String userMessage) {
         String message = Objects.requireNonNull(userMessage, "userMessage must not be null")
                 .toLowerCase(Locale.ROOT);
         return hasExplicitFileReference(message) || hasNamedProjectFile(message);
