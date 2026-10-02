@@ -5,6 +5,7 @@ public enum AgentActionType {
     PLAN_UPDATED,
     PLAN_COMPLETION_FEEDBACK,
     TOOL_CALL,
+    AUTO_REREAD,
     RUNTIME_FEEDBACK,
     FINAL_ANSWER,
     ERROR

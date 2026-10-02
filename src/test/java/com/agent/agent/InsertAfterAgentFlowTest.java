@@ -223,18 +223,14 @@ class InsertAfterAgentFlowTest {
     }
 
     @Test
-    void blocksSameFileMutationUntilTheSuccessfulWriteHasBeenReread() throws Exception {
+    void automaticRereadAllowsANextSameFileMutationFromFreshState() throws Exception {
         Files.writeString(workspace.resolve("changes.txt"), "foo one");
         QueueClient client = new QueueClient(List.of(
                 response("", call("read-before", "read_file", "{\"path\":\"changes.txt\"}")),
                 response("", call("patch-one", "apply_patch",
                         "{\"path\":\"changes.txt\",\"oldText\":\"foo\",\"newText\":\"bar\"}")),
-                response("", call("stale-patch", "apply_patch",
-                        "{\"path\":\"changes.txt\",\"oldText\":\"one\",\"newText\":\"two\"}")),
-                response("", call("fresh-read", "read_file", "{\"path\":\"changes.txt\"}")),
                 response("", call("patch-two", "apply_patch",
                         "{\"path\":\"changes.txt\",\"oldText\":\"one\",\"newText\":\"two\"}")),
-                response("", call("read-after", "read_file", "{\"path\":\"changes.txt\"}")),
                 response("Both requested changes are complete.")
         ));
 
@@ -242,33 +238,27 @@ class InsertAfterAgentFlowTest {
 
         assertTrue(result.trajectory().completed());
         assertEquals("bar two", Files.readString(workspace.resolve("changes.txt")));
-        assertTrue(result.trajectory().steps().stream().anyMatch(step ->
-                "stale-patch".equals(step.toolCallId())
-                        && step.toolResult().errorCode() == ToolErrorCode.STALE_EDIT_CONTEXT));
-        assertEquals(3, toolCount(result, "apply_patch"));
+        assertEquals(2, toolCount(result, "apply_patch"));
+        assertEquals(2, result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.AUTO_REREAD).count());
     }
 
     @Test
-    void insertBeforeAlsoRequiresAFreshReadBeforeAnotherSameFileMutation() throws Exception {
+    void insertBeforeAutomaticRereadKeepsTheNextInsertionFresh() throws Exception {
         Files.writeString(workspace.resolve("hello.cpp"), "int main() {}\n");
         QueueClient client = new QueueClient(List.of(
                 response("", call("first", "insert_before", insertBeforeMainArguments())),
-                response("", call("stale", "insert_before",
-                        "{\"path\":\"hello.cpp\",\"anchor\":\"int main() {\",\"content\":\"// second\\n\"}")),
-                response("", call("fresh", "read_file", "{\"path\":\"hello.cpp\"}")),
                 response("", call("second", "insert_before",
                         "{\"path\":\"hello.cpp\",\"anchor\":\"int main() {\",\"content\":\"// second\\n\"}")),
-                response("", call("verify", "read_file", "{\"path\":\"hello.cpp\"}")),
                 response("Completed both requested insertions.")
         ));
 
         AgentRunResult result = codingAgent(client).runWithTrajectory("Add two declarations before main");
 
         assertTrue(result.trajectory().completed());
-        assertTrue(result.trajectory().steps().stream().anyMatch(step ->
-                "stale".equals(step.toolCallId())
-                        && step.toolResult().errorCode() == ToolErrorCode.STALE_EDIT_CONTEXT));
-        assertEquals(3, toolCount(result, "insert_before"));
+        assertEquals(2, toolCount(result, "insert_before"));
+        assertEquals(2, result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.AUTO_REREAD).count());
     }
 
     @Test

@@ -1,6 +1,11 @@
 package com.agent;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -170,6 +175,68 @@ class CliIntentRouterTest {
         assertEquals(CliMode.READ, router.route("搜索字符串 hello").mode());
         assertEquals(CliMode.READ, router.route("哪些文件内容包含 Agent").mode());
         assertEquals(CliMode.READ, router.route("哪里调用了 create_file").mode());
+    }
+
+    @ParameterizedTest(name = "{index}: {0} -> {1}")
+    @MethodSource("codingActionReliabilityMatrix")
+    void routesCodingActionReliabilityMatrix(
+            String instruction,
+            CliMode expectedMode,
+            RoutingConfidence expectedConfidence,
+            RoutingReason expectedReason
+    ) {
+        assertDecision(instruction, expectedMode, expectedConfidence, expectedReason);
+    }
+
+    @ParameterizedTest(name = "workspace file creation {index}: {0}")
+    @MethodSource("workspaceFileCreationRoutingMatrix")
+    void routesWorkspaceFileCreationWithoutRequiringConcreteFilename(
+            String instruction,
+            CliMode expectedMode,
+            RoutingConfidence expectedConfidence,
+            RoutingReason expectedReason
+    ) {
+        assertDecision(instruction, expectedMode, expectedConfidence, expectedReason);
+    }
+
+    private static Stream<Arguments> workspaceFileCreationRoutingMatrix() {
+        return Stream.of(
+                Arguments.of("请在该目录下创建一个java文件用于计算斐波那契数列", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("请在当前目录创建一个 Java 文件", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("帮我在这个目录下新建一个 Java 类", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("在这里创建一个 Python 文件", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("给当前项目增加一个配置文件", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("在该文件夹下创建 README", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("帮我创建一个名为 Fibonacci.java 的文件", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("Java 文件怎么创建？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("如何创建一个 Java 文件？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("怎么在 Maven 项目中新建 Java 类？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("创建 Java 文件需要注意什么？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("Python 文件应该怎么创建？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("看看该目录下有哪些 Java 文件，不要修改", CliMode.READ, RoutingConfidence.HIGH, RoutingReason.WORKSPACE_READ_REQUEST),
+                Arguments.of("分析这个目录里的 Java 代码", CliMode.READ, RoutingConfidence.HIGH, RoutingReason.WORKSPACE_READ_REQUEST),
+                Arguments.of("找一下当前目录有哪些配置文件", CliMode.READ, RoutingConfidence.MEDIUM, RoutingReason.AMBIGUOUS_WORKSPACE_REQUEST)
+        );
+    }
+
+    private static Stream<Arguments> codingActionReliabilityMatrix() {
+        return Stream.of(
+                Arguments.of("Maven test 和 package 有什么区别？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("怎么运行 mvn test？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("JUnit 的 assertion 是什么？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("Java 中如何修复单元测试失败？", CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE),
+                Arguments.of("看看这个项目的 Greeter 是怎么实现的，不要修改。", CliMode.READ, RoutingConfidence.HIGH, RoutingReason.WORKSPACE_READ_REQUEST),
+                Arguments.of("分析一下当前 Maven 测试可能为什么失败，但先不要改代码。", CliMode.READ, RoutingConfidence.HIGH, RoutingReason.WORKSPACE_READ_REQUEST),
+                Arguments.of("找一下哪些文件引用了 Greeter。", CliMode.READ, RoutingConfidence.HIGH, RoutingReason.FILE_DISCOVERY_REQUEST),
+                Arguments.of("把 Greeter.greet() 改成返回 hello。", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET),
+                Arguments.of("运行 Maven 测试并修复失败。", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET),
+                Arguments.of("先运行 Maven 测试观察当前失败，再将 Greeter 的 greet 修复为返回 hello。", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET),
+                Arguments.of("执行测试，如果失败就根据错误修复代码。", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET),
+                Arguments.of("修改 Calculator.add() 让它正确执行加法，并运行测试验证。", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET),
+                Arguments.of("给当前项目新建一个 Utils.java。", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION),
+                Arguments.of("帮我直接修改这个类中的空指针问题。", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET),
+                Arguments.of("先检查失败测试，再完成必要的代码修改。", CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET)
+        );
     }
 
     private void assertCode(String input) {

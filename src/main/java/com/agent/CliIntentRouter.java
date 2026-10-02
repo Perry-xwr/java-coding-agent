@@ -13,7 +13,10 @@ public final class CliIntentRouter {
     private static final List<String> WORKSPACE_REFERENCES = List.of(
             "readme", "dockerfile", "makefile", "src/", "src\\",
             "这个文件", "该文件", "这个项目", "该项目", "这个函数", "该函数", "这个类", "该类",
-            "仓库", "当前目录", "项目里", "工作区", "repository", "workspace", "this file", "this project"
+            "仓库", "当前目录", "该目录", "该目录下", "这个目录", "此目录", "目录下",
+            "当前文件夹", "该文件夹", "这个文件夹", "这里",
+            "当前项目", "当前 maven", "项目里", "工作区",
+            "repository", "workspace", "this file", "this project"
     );
     private static final List<String> MUTATION_INTENTS = List.of(
             "修改", "修复", "修一下", "修掉", "改一下", "改清楚", "改成", "增加", "新增", "加一个", "删除",
@@ -38,10 +41,27 @@ public final class CliIntentRouter {
             "search string", "search code", "content contains", "where is", "where does"
     );
     private static final List<String> CODE_TARGETS = List.of(
-            "方法", "函数", "类", "parser", "method", "function", "class"
+            "代码", "方法", "函数", "类", "parser", "method", "function", "class"
+    );
+    private static final List<String> WORKSPACE_EXECUTION_SIGNALS = List.of(
+            "运行 maven", "执行 maven", "运行测试", "执行测试", "测试当前项目",
+            "run maven", "run tests", "execute tests"
+    );
+    private static final List<String> NO_MODIFICATION_CONSTRAINTS = List.of(
+            "不要修改", "不要改", "先不要修改", "先不要改", "不修改", "只读", "read-only"
     );
     private static final List<String> EXPLICIT_FILE_CREATION = List.of(
             "创建文件", "新建文件", "create file"
+    );
+    private static final List<String> FILE_CREATION_ACTIONS = List.of(
+            "创建", "新建", "create"
+    );
+    private static final List<String> GENERIC_FILE_ADDITION_ACTIONS = List.of(
+            "增加一个", "添加一个"
+    );
+    private static final List<String> GENERIC_FILE_CREATION_TARGETS = List.of(
+            "java文件", "java 文件", "python文件", "python 文件", "配置文件", "文本文件",
+            "源码文件", "readme", "java类", "java 类"
     );
     private static final Pattern EXPLICIT_RELATIVE_FILE_REFERENCE = Pattern.compile(
             "(?<![A-Za-z0-9_.\\\\/-])(?:[A-Za-z0-9_.-]+[\\\\/])*[A-Za-z0-9_-]+\\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_.-])"
@@ -50,7 +70,7 @@ public final class CliIntentRouter {
             "是什么", "是干什么", "有什么区别", "一般怎么", "怎么写"
     );
     private static final List<String> GENERAL_TECHNICAL_QUESTION_SIGNALS = List.of(
-            "怎么", "如何", "什么是", "是什么", "有什么区别"
+            "怎么", "如何", "什么是", "是什么", "有什么区别", "需要注意什么"
     );
     private static final List<String> CONTEXT_DEPENDENT_ACTIONS = List.of(
             "读取", "读", "查看", "看", "打开", "分析", "检查", "修改", "改", "处理", "继续",
@@ -62,14 +82,15 @@ public final class CliIntentRouter {
                 .toLowerCase(Locale.ROOT);
         boolean explicitFileReference = hasExplicitFileReference(normalized);
         boolean workspaceReference = hasWorkspaceReference(normalized) || explicitFileReference;
-        boolean mutationIntent = hasMutationIntent(normalized);
+        boolean mutationIntent = hasMutationIntent(normalized) && !hasNoModificationConstraint(normalized);
+        boolean workspaceExecution = hasWorkspaceExecutionSignal(normalized);
         if (hasExplicitFileCreation(normalized)) {
             return decision(CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_FILE_CREATION);
         }
         if (!workspaceReference && isGeneralTechnicalQuestion(normalized)) {
             return decision(CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE);
         }
-        if (mutationIntent && (workspaceReference || hasCodeTarget(normalized))) {
+        if (mutationIntent && (workspaceReference || hasCodeTarget(normalized) || workspaceExecution)) {
             return decision(CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET);
         }
         if (explicitFileReference || hasNamedProjectFile(normalized)) {
@@ -111,17 +132,17 @@ public final class CliIntentRouter {
                 .find();
     }
 
-    boolean hasClearMutationIntent(String userMessage) {
+    public boolean hasClearMutationIntent(String userMessage) {
         return hasMutationIntent(Objects.requireNonNull(userMessage, "userMessage must not be null")
                 .toLowerCase(Locale.ROOT));
     }
 
-    boolean hasReadRequest(String userMessage) {
+    public boolean hasReadRequest(String userMessage) {
         return hasReadIntent(Objects.requireNonNull(userMessage, "userMessage must not be null")
                 .toLowerCase(Locale.ROOT));
     }
 
-    boolean hasExplicitWorkspaceTarget(String userMessage) {
+    public boolean hasExplicitWorkspaceTarget(String userMessage) {
         String message = Objects.requireNonNull(userMessage, "userMessage must not be null")
                 .toLowerCase(Locale.ROOT);
         return hasExplicitFileReference(message) || hasNamedProjectFile(message);
@@ -151,10 +172,26 @@ public final class CliIntentRouter {
         return containsAny(message, CODE_TARGETS);
     }
 
+    private static boolean hasWorkspaceExecutionSignal(String message) {
+        return containsAny(message, WORKSPACE_EXECUTION_SIGNALS);
+    }
+
+    private static boolean hasNoModificationConstraint(String message) {
+        return containsAny(message, NO_MODIFICATION_CONSTRAINTS);
+    }
+
     private static boolean hasExplicitFileCreation(String message) {
         return containsAny(message, EXPLICIT_FILE_CREATION)
-                || (containsAny(message, List.of("创建", "新建", "create"))
-                && hasExplicitFileReference(message));
+                || (containsAny(message, FILE_CREATION_ACTIONS)
+                && (hasExplicitFileReference(message) || hasGenericFileCreationTarget(message))
+                && !isGeneralTechnicalQuestion(message))
+                || (containsAny(message, GENERIC_FILE_ADDITION_ACTIONS)
+                && hasGenericFileCreationTarget(message)
+                && !isGeneralTechnicalQuestion(message));
+    }
+
+    private static boolean hasGenericFileCreationTarget(String message) {
+        return containsAny(message, GENERIC_FILE_CREATION_TARGETS);
     }
 
     private static boolean hasExplicitFileReference(String message) {

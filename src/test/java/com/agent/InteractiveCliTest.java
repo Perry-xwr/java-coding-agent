@@ -232,10 +232,10 @@ class InteractiveCliTest {
                 List.of(0L, 250L, 500L)
         ));
 
-        assertEquals(List.of("Recent workspace context:\n"
-                        + "The previous workspace operation resolved the referenced file to:\n"
-                        + "hello.cpp\n\nUser request:\n在这个 cpp 文件里添加 subtract 函数"),
-                codeClient.userTasks());
+        String task = codeClient.userTasks().get(0);
+        assertTrue(task.contains("Working memory:"));
+        assertTrue(task.contains("Current candidates: hello.cpp"));
+        assertTrue(task.endsWith("User request:\n在这个 cpp 文件里添加 subtract 函数"));
     }
 
     @Test
@@ -254,9 +254,11 @@ class InteractiveCliTest {
                 List.of(0L, 250L, 500L)
         ));
 
-        assertEquals(List.of("找所有 Python 文件", "Recent workspace context:\n"
-                        + "The previous workspace operation resolved the referenced file to:\n"
-                        + "a.py\n\nUser request:\n读这个文件"), readClient.userTasks());
+        assertEquals("找所有 Python 文件", readClient.userTasks().get(0));
+        String handoff = readClient.userTasks().get(1);
+        assertTrue(handoff.contains("Working memory:"));
+        assertTrue(handoff.contains("Current candidates: a.py"));
+        assertTrue(handoff.endsWith("User request:\n读这个文件"));
     }
 
     @Test
@@ -277,8 +279,8 @@ class InteractiveCliTest {
         ));
 
         String task = codeClient.userTasks().get(0);
-        assertTrue(task.contains("multiple candidate files: a.cpp, b.cpp"));
-        assertTrue(task.contains("Do not choose one arbitrarily"));
+        assertTrue(task.contains("Current candidates: a.cpp, b.cpp"));
+        assertTrue(task.contains("Do not choose a candidate arbitrarily"));
         assertFalse(task.contains("resolved the referenced file to"));
     }
 
@@ -298,7 +300,9 @@ class InteractiveCliTest {
                 List.of(0L, 250L, 500L, 750L)
         ));
 
-        assertEquals(List.of("修改 README.md"), codeClient.userTasks());
+        String codeTask = codeClient.userTasks().get(0);
+        assertTrue(codeTask.contains("Explicit target: README.md"));
+        assertTrue(codeTask.endsWith("User request:\n修改 README.md"));
         assertEquals(1, chatCalls.get());
     }
 

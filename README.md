@@ -30,6 +30,8 @@ Evaluation is kept separate from runtime execution:
 Agent Run → Trajectory → Hidden Evaluator → Metrics → Failure Analysis
 ```
 
+Working memory is session-level, bounded, non-persistent, and grounded in user requests and tool observations. It is not long-term memory, semantic retrieval, or RAG.
+
 ## Key Features
 
 - ReAct-style multi-step Agent loop and function calling
@@ -39,6 +41,7 @@ Agent Run → Trajectory → Hidden Evaluator → Metrics → Failure Analysis
 - Compiler/test diagnostic parsing and bounded recovery behavior
 - Post-edit evidence gates: reread changed files and require Maven evidence for Java changes
 - Typed `ToolResult` observations and error codes
+- Bounded structured session working memory for active tasks, explicit targets, discovered files, verified tool facts, recent typed failures, and the last mutation
 - Structured Agent trajectories for reproducible analysis
 - Isolated benchmark fixtures with hidden deterministic evaluation
 - Failure analysis and multiple Agent-strategy experiments
@@ -94,6 +97,16 @@ The first and only frozen held-out TEST run scored **5/14 (35.71%)**. There was 
 
 The samples are small; these are descriptive findings, not claims of statistical significance.
 
+## Evaluation
+
+The repository contains three evaluation tracks:
+
+- V0.1 historical benchmark for early Java/Maven agent behavior
+- V1.2 coding-agent benchmark for the current interactive runtime
+- `memory-v1` paired ablation benchmark comparing legacy file-reference context with structured session working memory
+
+In two observed paired DEV rounds over the same eight `memory-v1` tasks, Legacy Context scored 6/8 in both rounds and Structured Memory scored 7/8 in both rounds. This is a small descriptive result, not a statistically significant estimate: the task set is small, model behavior is stochastic, and one task has a known completion-contract limitation. The cleanest repeated signal was lower cross-turn overhead when continuing from the last mutation. See [the memory-v1 protocol](benchmark/memory-v1/README.md).
+
 ## Quick Start
 
 Requirements: Java 17, Maven 3.9+, a GLM API key, and the currently configured HTTP proxy at `127.0.0.1:7897`.
@@ -144,8 +157,13 @@ Supported baseline values include `react`, `react_action_oriented`, `react_diagn
 - AUTO routing is deterministic and intentionally lightweight; ambiguous workspace requests default to safer read-only handling
 - Tool selection still depends on the LLM after routing
 - Structurally sensitive edits may still select a suboptimal insertion tool or anchor; the runtime has no AST parser
+- Verification for non-Java projects is limited compared with the Maven-based Java verification path
+- Working memory is session-only and is not persisted across CLI restarts
+- There is no persistent or semantic long-term memory and no RAG subsystem
+- Benchmark sets are small; reported results are descriptive rather than statistically significant
+- The `memory-v1` benchmark contains a known clarification/completion-contract limitation
 - This is a research/educational coding-agent runtime, not a production IDE replacement
-- No Multi-Agent system, persistent Memory, or Agentic RL in V1
+- No Multi-Agent system or Agentic RL in the current runtime
 
 ## Roadmap
 

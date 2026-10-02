@@ -39,6 +39,12 @@ public class GlmClient implements StreamingLlmClient {
         this(requireApiKey(), DEFAULT_ENDPOINT, DEFAULT_MODEL, createHttpClient(), new ObjectMapper());
     }
 
+    /** Benchmark-only client: one logical request maps to one OkHttp attempt. */
+    public static GlmClient forBenchmark() {
+        return new GlmClient(requireApiKey(), DEFAULT_ENDPOINT, DEFAULT_MODEL,
+                createHttpClient(false), new ObjectMapper());
+    }
+
     GlmClient(String apiKey, String endpoint, String model,
               OkHttpClient httpClient, ObjectMapper objectMapper) {
         this.apiKey = requireNonBlank(apiKey, "apiKey");
@@ -214,12 +220,17 @@ public class GlmClient implements StreamingLlmClient {
     }
 
     private static OkHttpClient createHttpClient() {
+        return createHttpClient(true);
+    }
+
+    private static OkHttpClient createHttpClient(boolean retryOnConnectionFailure) {
         Proxy proxy = new Proxy(
                 Proxy.Type.HTTP,
                 new InetSocketAddress("127.0.0.1", 7897)
         );
         return new OkHttpClient.Builder()
                 .proxy(proxy)
+                .retryOnConnectionFailure(retryOnConnectionFailure)
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(120, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)

@@ -407,6 +407,39 @@ public class Agent {
                 );
                 history.add(Message.tool(toolCall.id(), serializeObservation(toolResult)));
 
+                if (isSuccessfulAutoRereadMutation(toolCall.name(), toolResult)) {
+                    Map<String, Object> rereadArguments = Map.of("path", toolPath);
+                    String rereadJson = serializeArguments(rereadArguments);
+                    long rereadStartedAt = System.currentTimeMillis();
+                    long rereadStartedNanos = System.nanoTime();
+                    ToolResult rereadResult = toolRegistry.execute("read_file", rereadJson);
+                    steps.add(new AgentStep(
+                            steps.size() + 1,
+                            AgentActionType.AUTO_REREAD,
+                            "read_file",
+                            null,
+                            rereadJson,
+                            rereadArguments,
+                            rereadResult,
+                            null,
+                            null,
+                            rereadStartedAt,
+                            elapsedMs(rereadStartedNanos)
+                    ));
+                    progress.observe("read_file", rereadArguments, rereadResult, steps.size());
+                    history.add(Message.system(
+                            "RUNTIME_AUTO_REREAD: Latest contents for " + toolPath + "\n"
+                                    + serializeObservation(rereadResult)
+                    ));
+                    if (!rereadResult.success()) {
+                        String feedback = "AUTO_REREAD_FAILURE: The workspace write succeeded, but the "
+                                + "runtime could not reread " + toolPath + ". Do not claim completion; "
+                                + "use read_file to obtain current contents before continuing.";
+                        steps.add(runtimeFeedbackStep(steps.size() + 1, null, feedback));
+                        history.add(Message.system(feedback));
+                    }
+                }
+
                 if (diagnosticRecovery
                         && taskMode == TaskMode.CODE_MODIFICATION
                         && progress.consumeConvergenceGuidanceAfterReread()) {
@@ -464,11 +497,13 @@ public class Agent {
                 }
 
                 if (isSuccessfulWorkspaceMutation(toolCall.name(), toolResult)) {
-                    String feedback = "POST_MUTATION_READ_REQUIRED: A workspace write succeeded. "
-                            + "Before another write or final answer, use read_file on the changed path "
-                            + "and confirm the requested change and existing content are both intact.";
-                    steps.add(runtimeFeedbackStep(steps.size() + 1, null, feedback));
-                    history.add(Message.system(feedback));
+                    if (!isAutoRereadMutationTool(toolCall.name())) {
+                        String feedback = "POST_MUTATION_READ_REQUIRED: A workspace write succeeded. "
+                                + "Before another write or final answer, use read_file on the changed path "
+                                + "and confirm the requested change and existing content are both intact.";
+                        steps.add(runtimeFeedbackStep(steps.size() + 1, null, feedback));
+                        history.add(Message.system(feedback));
+                    }
                     break;
                 }
             }
@@ -781,6 +816,27 @@ public class Agent {
         return isWorkspaceMutationTool(toolName)
                 && result.success()
                 && Boolean.TRUE.equals(result.metadata().get("changed"));
+    }
+
+    private static boolean isAutoRereadMutationTool(String toolName) {
+        return "apply_patch".equals(toolName)
+                || "insert_before".equals(toolName)
+                || "insert_after".equals(toolName)
+                || "create_file".equals(toolName);
+    }
+
+    private static boolean isSuccessfulAutoRereadMutation(String toolName, ToolResult result) {
+        return isAutoRereadMutationTool(toolName)
+                && result.success()
+                && Boolean.TRUE.equals(result.metadata().get("changed"));
+    }
+
+    private static String serializeArguments(Map<String, Object> arguments) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(arguments);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Could not serialize runtime tool arguments", exception);
+        }
     }
 
     private static boolean isTestInfrastructureFailure(ToolErrorCode errorCode) {

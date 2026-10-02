@@ -17,6 +17,14 @@
                 <configuration>
                     <mainClass>com.agent.Main</mainClass>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>v12-benchmark</id>
+                        <configuration>
+                            <mainClass>com.agent.benchmark.v12.V12BenchmarkMain</mainClass>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -154,10 +154,21 @@ public final class CliAgentFactory {
             AgentEventListener eventListener
     ) {
         Path normalizedWorkspace = normalize(workspace);
+        return createCoding(client,normalizedWorkspace,eventListener,normalizedWorkspace.resolve(".m2/repository"));
+    }
+
+    /** Creates the same CODE profile with an explicit Maven cache for isolated benchmark workspaces. */
+    public static Agent createCoding(
+            LLMClient client,
+            Path workspace,
+            AgentEventListener eventListener,
+            Path localRepository
+    ) {
+        Path normalizedWorkspace = normalize(workspace);
         ToolRegistry registry = ToolRegistry.withCliCodingTools(
                 normalizedWorkspace,
                 new DefaultProcessRunner(),
-                normalizedWorkspace.resolve(".m2/repository")
+                Objects.requireNonNull(localRepository,"localRepository must not be null").toAbsolutePath().normalize()
         );
         return new Agent(
                 Objects.requireNonNull(client, "client must not be null"),
