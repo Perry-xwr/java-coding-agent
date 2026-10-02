@@ -1,6 +1,6 @@
 package com.agent.benchmark.v12;
 
-import com.agent.llm.GlmClient;
+import com.agent.llm.LlmClientFactory;
 import com.agent.llm.LLMResponse;
 import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
@@ -30,7 +30,7 @@ public final class V12BenchmarkMain {
         int runCap=Integer.parseInt(options.getOrDefault("max-provider-requests",String.valueOf(theoretical)));
         ProviderBudget budget=new ProviderBudget(runCap);
         V12ProviderFactory factory="real".equals(provider)
-                ? task->GlmClient.forBenchmark()
+                ? task->LlmClientFactory.createBenchmark()
                 : task->messages->new LLMResponse("Fake provider: no scripted action for "+task.id(),List.of());
         String runId=options.getOrDefault("run-id",DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
                 .withZone(java.time.ZoneOffset.UTC).format(Instant.now())+"-"+provider);

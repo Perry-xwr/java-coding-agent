@@ -3,8 +3,8 @@ package com.agent;
 import com.agent.agent.Agent;
 import com.agent.agent.AgentEventListener;
 import com.agent.agent.TaskMode;
-import com.agent.llm.GlmClient;
 import com.agent.llm.LLMClient;
+import com.agent.llm.LlmClientFactory;
 import com.agent.tool.ToolRegistry;
 import com.agent.tool.execution.DefaultProcessRunner;
 
@@ -99,7 +99,7 @@ public final class CliAgentFactory {
     }
 
     public static CliSessions createProfiles(Path workspace, AgentEventListener eventListener) {
-        LLMClient client = new GlmClient();
+        LLMClient client = LlmClientFactory.create();
         return createProfiles(client, workspace, eventListener);
     }
 

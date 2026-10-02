@@ -1,6 +1,7 @@
 package com.agent.benchmark;
 
-import com.agent.llm.GlmClient;
+import com.agent.llm.LlmClientFactory;
+import com.agent.llm.ModelProviderConfig;
 import com.agent.tool.execution.DefaultProcessRunner;
 
 import java.nio.file.Path;
@@ -49,9 +50,10 @@ public final class BenchmarkMain {
         Map<String, EvaluationSpec> specs = new EvaluationSpecLoader().load(
                 benchmarkRoot.resolve("tasks/v0.1/evaluation-checks.json")
         );
+        ModelProviderConfig modelConfig = ModelProviderConfig.fromEnvironment();
         BenchmarkRunner runner = new BenchmarkRunner(
                 workspaceManager,
-                new DefaultBaselineExecutor(GlmClient::new, localRepository),
+                new DefaultBaselineExecutor(() -> LlmClientFactory.createBenchmark(modelConfig), localRepository),
                 new DeterministicTaskEvaluator(
                         workspaceManager,
                         benchmarkRoot.resolve("hidden/v0.1"),
@@ -64,8 +66,8 @@ public final class BenchmarkMain {
         int maxSteps = selected.stream().mapToInt(BenchmarkTask::maxSteps).max().orElse(0);
         ExperimentMetadata metadata = new ExperimentMetadata(
                 experimentId,
-                "glm-4-flash",
-                "GLM",
+                modelConfig.model(),
+                modelConfig.displayProvider(),
                 options.baseline,
                 VERSION,
                 "provider-default",
