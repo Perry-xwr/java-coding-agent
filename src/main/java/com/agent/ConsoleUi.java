@@ -1,6 +1,7 @@
 package com.agent;
 
 import com.agent.agent.AgentEventListener;
+import com.agent.agent.PlanningMode;
 import com.agent.tool.ToolResult;
 
 import java.io.PrintStream;
@@ -18,11 +19,18 @@ public final class ConsoleUi implements AgentEventListener {
     }
 
     public void printBanner(Path workspace, CliMode mode) {
+        printBanner(workspace, mode, null);
+    }
+
+    public void printBanner(Path workspace, CliMode mode, PlanningMode planningMode) {
         output.println("Java Coding Agent");
         output.println();
         output.println("Workspace: " + workspace.toAbsolutePath().normalize());
         output.println("Provider: GLM");
         output.println("Coding Strategy: REACT_DIAGNOSTIC_RECOVERY");
+        if (planningMode == PlanningMode.ADAPTIVE) {
+            output.println("Planning: ADAPTIVE");
+        }
         output.println("Mode: " + mode);
         output.println();
         output.println("Type /help for commands.");

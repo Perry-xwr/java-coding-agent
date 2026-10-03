@@ -39,6 +39,7 @@ public class Agent {
     private final boolean planningEnabled;
     private final PlanningMode planningMode;
     private final AgentPlanner planner = new AgentPlanner();
+    private final AdaptivePlanningRouter adaptivePlanningRouter = new AdaptivePlanningRouter();
     private final AgentEventListener eventListener;
     private final boolean streamingEnabled;
     private final List<Message> history = new ArrayList<>();
@@ -218,7 +219,13 @@ public class Agent {
     }
 
     public AgentRunResult runWithTrajectory(String input) {
+        return runWithTrajectory(input, input);
+    }
+
+    /** Runs the composed execution input while routing from the original, current user turn. */
+    public AgentRunResult runWithTrajectory(String input, String rawUserTask) {
         String task = Objects.requireNonNull(input, "input must not be null");
+        String routingTask = Objects.requireNonNull(rawUserTask, "rawUserTask must not be null");
         String runId = UUID.randomUUID().toString();
         long runStartedAt = System.currentTimeMillis();
         long runStartedNanos = System.nanoTime();
@@ -242,7 +249,13 @@ public class Agent {
 
         history.add(Message.user(task));
 
-        boolean planExecute = planningMode == PlanningMode.PLAN_EXECUTE
+        PlanningMode effectivePlanningMode = planningMode;
+        if (planningMode == PlanningMode.ADAPTIVE && taskMode == TaskMode.CODE_MODIFICATION) {
+            AdaptivePlanningDecision decision = adaptivePlanningRouter.route(routingTask);
+            effectivePlanningMode = decision.selectedMode();
+            steps.add(adaptivePlanningStep(steps.size() + 1, decision));
+        }
+        boolean planExecute = effectivePlanningMode == PlanningMode.PLAN_EXECUTE
                 && taskMode == TaskMode.CODE_MODIFICATION;
         boolean planningFallback = false;
         int replanCount = 0;
@@ -794,6 +807,15 @@ public class Agent {
                 stepIndex, type, null, null, null, arguments, null,
                 null, null, System.currentTimeMillis(), 0
         );
+    }
+
+    private AgentStep adaptivePlanningStep(int stepIndex, AdaptivePlanningDecision decision) {
+        return new AgentStep(stepIndex, AgentActionType.PLANNING_ROUTED, null, null, null,
+                Map.of("configuredMode", planningMode.name(),
+                        "effectiveMode", decision.selectedMode().name(),
+                        "confidence", decision.confidence().name(),
+                        "reasons", decision.reasons()),
+                null, null, null, System.currentTimeMillis(), 0);
     }
 
     private static AgentStep planStatusStep(

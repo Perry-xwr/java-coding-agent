@@ -68,6 +68,11 @@ experimental `PLAN_EXECUTE` strategy: each task run performs an independent PLAN
 with at most one bounded REPLAN. The plan guides execution; it is not a verified workspace fact.
 This is optional experimental support, not multi-agent orchestration.
 
+Set `PLANNING_MODE=adaptive` to enable experimental zero-LLM planning routing: simple tasks stay
+reactive, while tasks with clear multi-step, multi-requirement, cross-file, or verification signals
+may use `PLAN_EXECUTE`. The deterministic heuristic runs before the first provider request and is
+not yet evaluated by an independent adaptive benchmark.
+
 ### Planning Ablation
 
 In two paired live rounds over the same eight `planning-v1` DEV tasks, `REACTIVE` scored 2/8 then
@@ -122,15 +127,22 @@ The repository contains three evaluation tracks:
 
 In two observed paired DEV rounds over the same eight `memory-v1` tasks, Legacy Context scored 6/8 in both rounds and Structured Memory scored 7/8 in both rounds. This is a small descriptive result, not a statistically significant estimate: the task set is small, model behavior is stochastic, and one task has a known completion-contract limitation. The cleanest repeated signal was lower cross-turn overhead when continuing from the last mutation. See [the memory-v1 protocol](benchmark/memory-v1/README.md).
 
+### Adaptive Planning Evaluation
+
+The `adaptive-planning-v1` protocol compares REACTIVE, PLAN_EXECUTE, and a zero-LLM heuristic ADAPTIVE router on nine DEV tasks. Attempt 1 was interrupted by local proxy failures. Attempt 2 then completed two rounds over the same nine tasks: REACTIVE scored 7/18, PLAN_EXECUTE 9/18, and ADAPTIVE 8/18. These are repeated task-runs, not independent tasks, and do not establish a statistically significant advantage. All 26 Maven verification invocations in Attempt 2 failed while resolving Surefire from Maven Central because network access was denied, so Java verification outcomes remain infrastructure-limited. See [the adaptive-planning protocol and run note](benchmark/adaptive-planning-v1/README.md).
+
 ## Quick Start
 
-Requirements: Java 17, Maven 3.9+, and a GLM API key by default. The default GLM backend continues to use the configured HTTP proxy at `127.0.0.1:7897`.
+Requirements: Java 17, Maven 3.9+, and a GLM API key by default. Model requests connect directly unless an HTTP proxy is explicitly configured with `MODEL_PROXY`.
 
 ```powershell
 $env:GLM_API_KEY="YOUR_KEY"
+# Optional, for example: $env:MODEL_PROXY="http://127.0.0.1:7897"
 mvn test
 mvn exec:java '-Dexec.mainClass=com.agent.Main'
 ```
+
+`MODEL_PROXY` is an optional HTTP proxy URL (`http://host:port`). It applies to both GLM and OpenAI-compatible providers. Without it, both clients use a direct connection. Invalid proxy URLs fail during configuration validation; API keys are never included in configuration diagnostics.
 
 The CLI starts in `AUTO` mode and deterministically routes clear workspace reads to `READ`, explicit workspace changes to `CODE`, and general questions to `CHAT`. Use `/chat`, `/read`, `/code`, or `/auto` to override the active mode. Output is streamed as it arrives. In `CODE`, successful writes must be reread before completion, and Java changes require a successful Maven test when the tool is available. Enter `clear` in `AUTO` mode to reset all profile histories and the short-lived workspace reference context. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
 

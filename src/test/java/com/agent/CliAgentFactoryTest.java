@@ -78,6 +78,13 @@ class CliAgentFactoryTest {
         assertEquals(PlanningMode.PLAN_EXECUTE, planExecute.code().planningMode());
         assertEquals(PlanningMode.REACTIVE, planExecute.chat().planningMode());
         assertEquals(PlanningMode.REACTIVE, planExecute.read().planningMode());
+
+        RecordingClient adaptiveClient = new RecordingClient();
+        CliSessions adaptive = CliAgentFactory.createProfiles(
+                adaptiveClient, workspace, AgentEventListener.NO_OP, PlanningMode.ADAPTIVE);
+        assertEquals(PlanningMode.ADAPTIVE, adaptive.code().planningMode());
+        assertEquals(PlanningMode.REACTIVE, adaptive.chat().planningMode());
+        assertEquals(PlanningMode.REACTIVE, adaptive.read().planningMode());
     }
 
     @Test

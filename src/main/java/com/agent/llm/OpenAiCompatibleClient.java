@@ -10,6 +10,7 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 
 import java.io.IOException;
+import java.net.Proxy;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,7 +29,11 @@ public final class OpenAiCompatibleClient implements LLMClient {
     private final ObjectMapper objectMapper;
 
     public OpenAiCompatibleClient(String endpoint, String model, String apiKey) {
-        this(endpoint, model, apiKey, defaultHttpClient(), new ObjectMapper());
+        this(endpoint, model, apiKey, defaultHttpClient(null), new ObjectMapper());
+    }
+
+    OpenAiCompatibleClient(String endpoint, String model, String apiKey, Proxy proxy) {
+        this(endpoint, model, apiKey, defaultHttpClient(proxy), new ObjectMapper());
     }
 
     OpenAiCompatibleClient(
@@ -123,13 +128,16 @@ public final class OpenAiCompatibleClient implements LLMClient {
         return result;
     }
 
-    private static OkHttpClient defaultHttpClient() {
-        return new OkHttpClient.Builder()
+    private static OkHttpClient defaultHttpClient(Proxy proxy) {
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(120, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
-                .build();
+                .writeTimeout(30, TimeUnit.SECONDS);
+        if (proxy != null) builder.proxy(proxy);
+        return builder.build();
     }
+
+    OkHttpClient httpClientForTesting() { return httpClient; }
 
     private static String requireNonBlank(String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");

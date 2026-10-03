@@ -45,7 +45,7 @@ public final class InteractiveCli {
 
     public void run(BufferedReader reader) throws IOException {
         Objects.requireNonNull(reader, "reader must not be null");
-        ui.printBanner(workspace, activeMode);
+        ui.printBanner(workspace, activeMode, sessions.code().planningMode());
         while (true) {
             ui.promptUser(activeMode);
             String line = readLine(reader);
@@ -182,8 +182,7 @@ public final class InteractiveCli {
                 ui.printSystemMessage("AUTO -> " + sessionMode);
             }
             AgentRunResult result = sessions.session(sessionMode).runWithTrajectory(
-                    taskWithWorkspaceContext(task, sessionMode)
-            );
+                    taskWithWorkspaceContext(task, sessionMode), task);
             workingContext.observe(result.trajectory());
             if (result.trajectory().terminationReason() == TerminationReason.LLM_ERROR) {
                 throw new IOException("LLM request failed");

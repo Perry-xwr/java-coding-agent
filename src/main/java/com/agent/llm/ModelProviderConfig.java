@@ -1,6 +1,8 @@
 package com.agent.llm;
 
 import java.net.URI;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.util.Locale;
 import java.util.Map;
 
@@ -15,12 +17,14 @@ public final class ModelProviderConfig {
     private final String baseUrl;
     private final String model;
     private final String apiKey;
+    private final Proxy proxy;
 
-    private ModelProviderConfig(String provider, String baseUrl, String model, String apiKey) {
+    private ModelProviderConfig(String provider, String baseUrl, String model, String apiKey, Proxy proxy) {
         this.provider = provider;
         this.baseUrl = trimTrailingSlashes(baseUrl);
         this.model = model;
         this.apiKey = apiKey;
+        this.proxy = proxy;
     }
 
     public static ModelProviderConfig fromEnvironment() {
@@ -31,12 +35,13 @@ public final class ModelProviderConfig {
         String provider = environment.getOrDefault("MODEL_PROVIDER", GLM).trim()
                 .toLowerCase(Locale.ROOT);
         if (provider.isEmpty()) provider = GLM;
+        Proxy proxy = parseProxy(environment.get("MODEL_PROXY"));
         return switch (provider) {
             case GLM -> new ModelProviderConfig(
                     GLM,
                     environment.getOrDefault("MODEL_BASE_URL", DEFAULT_GLM_BASE_URL),
                     nonBlankOrDefault(environment.get("MODEL_NAME"), DEFAULT_GLM_MODEL),
-                    environment.get("GLM_API_KEY")
+                    environment.get("GLM_API_KEY"), proxy
             );
             case OPENAI_COMPATIBLE -> new ModelProviderConfig(
                     OPENAI_COMPATIBLE,
@@ -44,7 +49,7 @@ public final class ModelProviderConfig {
                             "Missing MODEL_BASE_URL for openai-compatible provider"),
                     require(environment.get("MODEL_NAME"),
                             "Missing MODEL_NAME for openai-compatible provider"),
-                    blankToNull(environment.get("MODEL_API_KEY"))
+                    blankToNull(environment.get("MODEL_API_KEY")), proxy
             );
             default -> throw new IllegalArgumentException(
                     "Unsupported MODEL_PROVIDER: " + provider + " (expected glm or openai-compatible)");
@@ -56,6 +61,8 @@ public final class ModelProviderConfig {
     public String model() { return model; }
 
     String apiKey() { return apiKey; }
+
+    Proxy proxy() { return proxy; }
 
     public String displayProvider() {
         return GLM.equals(provider) ? "GLM" : "OpenAI-compatible";
@@ -84,7 +91,32 @@ public final class ModelProviderConfig {
     @Override
     public String toString() {
         return "ModelProviderConfig[provider=" + provider + ", baseUrl=" + baseUrl
-                + ", model=" + model + ", apiKey=" + (apiKey == null ? "unset" : "[REDACTED]") + "]";
+                + ", model=" + model + ", proxy=" + (proxy == null ? "direct" : proxy.address())
+                + ", apiKey=" + (apiKey == null ? "unset" : "[REDACTED]") + "]";
+    }
+
+    private static Proxy parseProxy(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            URI uri = URI.create(value.trim());
+            if (!"http".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
+                    || uri.getPort() < 1 || uri.getPort() > 65535 || uri.getRawUserInfo() != null
+                    || (uri.getRawPath() != null && !uri.getRawPath().isEmpty() && !"/".equals(uri.getRawPath()))
+                    || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                throw invalidProxy();
+            }
+            return new Proxy(Proxy.Type.HTTP, new InetSocketAddress(uri.getHost(), uri.getPort()));
+        } catch (IllegalArgumentException exception) {
+            if ("MODEL_PROXY must be an absolute http URL with a valid host and port".equals(exception.getMessage())) {
+                throw exception;
+            }
+            throw invalidProxy();
+        }
+    }
+
+    private static IllegalArgumentException invalidProxy() {
+        return new IllegalArgumentException(
+                "MODEL_PROXY must be an absolute http URL with a valid host and port");
     }
 
     private static String require(String value, String message) {

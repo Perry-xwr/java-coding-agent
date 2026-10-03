@@ -2,6 +2,7 @@ package com.agent.llm;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -9,11 +10,13 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 
-import java.io.IOException;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.InetSocketAddress;
+import java.net.ConnectException;
 import java.net.Proxy;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,8 +28,6 @@ import java.util.concurrent.TimeUnit;
 public class GlmClient implements StreamingLlmClient {
     private static final String API_KEY_ENV = "GLM_API_KEY";
     private static final String DEBUG_ENV = "GLM_DEBUG";
-    private static final String DEFAULT_ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
-    private static final String DEFAULT_MODEL = "glm-4-flash";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final String apiKey;
@@ -36,18 +37,29 @@ public class GlmClient implements StreamingLlmClient {
     private final ObjectMapper objectMapper;
 
     public GlmClient() {
-        this(requireApiKey(), DEFAULT_ENDPOINT, DEFAULT_MODEL, createHttpClient(), new ObjectMapper());
+        this(defaultGlmConfig());
+    }
+
+    private GlmClient(ModelProviderConfig config) {
+        this(requireApiKey(config), config.endpoint(), config.model(),
+                createHttpClient(config.proxy(), true), new ObjectMapper());
     }
 
     /** Benchmark-only client: one logical request maps to one OkHttp attempt. */
     public static GlmClient forBenchmark() {
-        return new GlmClient(requireApiKey(), DEFAULT_ENDPOINT, DEFAULT_MODEL,
-                createHttpClient(false), new ObjectMapper());
+        ModelProviderConfig config = defaultGlmConfig();
+        return new GlmClient(requireApiKey(config), config.endpoint(), config.model(),
+                createHttpClient(config.proxy(), false), new ObjectMapper());
     }
 
     static GlmClient configured(String apiKey, String endpoint, String model, boolean benchmark) {
         return new GlmClient(apiKey, endpoint, model,
-                createHttpClient(!benchmark), new ObjectMapper());
+                createHttpClient(null, !benchmark), new ObjectMapper());
+    }
+
+    static GlmClient configured(String apiKey, String endpoint, String model, boolean benchmark, Proxy proxy) {
+        return new GlmClient(apiKey, endpoint, model,
+                createHttpClient(proxy, !benchmark), new ObjectMapper());
     }
 
     GlmClient(String apiKey, String endpoint, String model,
@@ -75,13 +87,20 @@ public class GlmClient implements StreamingLlmClient {
             ResponseBody body = response.body();
             String responseJson = body == null ? "" : body.string();
             if (!response.isSuccessful()) {
-                System.err.println("GLM error body: " + responseJson);
-                throw new IOException("GLM request failed with HTTP " + response.code() + ": " + responseJson);
+                String safeBody = redactApiKey(responseJson);
+                System.err.println("GLM error body: " + safeBody);
+                throw new IOException("GLM HTTP provider error " + response.code() + ": " + safeBody);
             }
             if (responseJson.isBlank()) {
                 throw new IOException("GLM returned an empty response body");
             }
-            return parseResponse(responseJson);
+            try {
+                return parseResponse(responseJson);
+            } catch (JsonProcessingException exception) {
+                throw new IOException("GLM response parse error");
+            }
+        } catch (IOException exception) {
+            throw classifyTransportError(exception);
         }
     }
 
@@ -100,9 +119,10 @@ public class GlmClient implements StreamingLlmClient {
             ResponseBody body = response.body();
             if (!response.isSuccessful()) {
                 String errorBody = body == null ? "" : body.string();
-                System.err.println("GLM error body: " + errorBody);
+                String safeBody = redactApiKey(errorBody);
+                System.err.println("GLM error body: " + safeBody);
                 throw new IOException("GLM streaming request failed with HTTP " + response.code()
-                        + ": " + errorBody);
+                        + ": " + safeBody);
             }
             if (body == null) {
                 throw new IOException("GLM returned an empty streaming response body");
@@ -128,7 +148,13 @@ public class GlmClient implements StreamingLlmClient {
                     processEvent(eventData, accumulator);
                 }
             }
-            return accumulator.finish();
+            try {
+                return accumulator.finish();
+            } catch (IOException exception) {
+                throw exception;
+            }
+        } catch (IOException exception) {
+            throw classifyTransportError(exception);
         }
     }
 
@@ -216,30 +242,57 @@ public class GlmClient implements StreamingLlmClient {
         return new LLMResponse(content, toolCalls);
     }
 
-    private static String requireApiKey() {
-        String apiKey = System.getenv(API_KEY_ENV);
+    private static ModelProviderConfig defaultGlmConfig() {
+        ModelProviderConfig config = ModelProviderConfig.fromEnvironment();
+        if (!ModelProviderConfig.GLM.equals(config.provider())) {
+            throw new IllegalStateException("GlmClient requires MODEL_PROVIDER=glm");
+        }
+        return config;
+    }
+
+    private static String requireApiKey(ModelProviderConfig config) {
+        String apiKey = config.apiKey();
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("Environment variable " + API_KEY_ENV + " is not set");
         }
         return apiKey;
     }
 
-    private static OkHttpClient createHttpClient() {
-        return createHttpClient(true);
-    }
-
-    private static OkHttpClient createHttpClient(boolean retryOnConnectionFailure) {
-        Proxy proxy = new Proxy(
-                Proxy.Type.HTTP,
-                new InetSocketAddress("127.0.0.1", 7897)
-        );
-        return new OkHttpClient.Builder()
-                .proxy(proxy)
+    private static OkHttpClient createHttpClient(Proxy proxy, boolean retryOnConnectionFailure) {
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .retryOnConnectionFailure(retryOnConnectionFailure)
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(120, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
-                .build();
+                .writeTimeout(30, TimeUnit.SECONDS);
+        if (proxy != null) builder.proxy(proxy);
+        return builder.build();
+    }
+
+    OkHttpClient httpClientForTesting() { return httpClient; }
+
+    private String redactApiKey(String value) {
+        return apiKey.isEmpty() ? value : value.replace(apiKey, "[REDACTED]");
+    }
+
+    private static IOException classifyTransportError(IOException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SocketTimeoutException) {
+                return new IOException("GLM transport timeout", exception);
+            }
+            if (cause instanceof ConnectException) {
+                String message = cause.getMessage();
+                if (message != null && message.toLowerCase().contains("refused")) {
+                    return new IOException("GLM connection refused", exception);
+                }
+            }
+            if (cause instanceof SocketException) {
+                String message = cause.getMessage();
+                if (message != null && message.toLowerCase().contains("reset")) {
+                    return new IOException("GLM connection reset", exception);
+                }
+            }
+        }
+        return exception;
     }
 
     private static boolean isDebugEnabled() {

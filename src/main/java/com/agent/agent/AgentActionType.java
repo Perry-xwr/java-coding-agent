@@ -1,6 +1,7 @@
 package com.agent.agent;
 
 public enum AgentActionType {
+    PLANNING_ROUTED,
     PLAN_CREATED,
     PLAN_UPDATED,
     PLAN_STEP_UPDATE,

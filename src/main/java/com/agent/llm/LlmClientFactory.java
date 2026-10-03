@@ -30,11 +30,11 @@ public final class LlmClientFactory {
             if (key == null || key.isBlank()) {
                 throw new IllegalStateException("Environment variable GLM_API_KEY is not set");
             }
-            return GlmClient.configured(key, config.endpoint(), config.model(), benchmark);
+            return GlmClient.configured(key, config.endpoint(), config.model(), benchmark, config.proxy());
         }
         if (ModelProviderConfig.OPENAI_COMPATIBLE.equals(config.provider())) {
             config.validateOpenAiCompatibleBaseUrl();
-            return new OpenAiCompatibleClient(config.endpoint(), config.model(), config.apiKey());
+            return new OpenAiCompatibleClient(config.endpoint(), config.model(), config.apiKey(), config.proxy());
         }
         throw new IllegalArgumentException("Unsupported model provider: " + config.provider());
     }

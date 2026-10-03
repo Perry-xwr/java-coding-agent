@@ -3,6 +3,7 @@ package com.agent;
 import com.agent.agent.Agent;
 import com.agent.agent.AgentEventListener;
 import com.agent.agent.TaskMode;
+import com.agent.agent.PlanningMode;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
@@ -147,6 +148,19 @@ class InteractiveCliTest {
         assertTrue(text.contains("Mode: AUTO"));
         assertTrue(text.contains("[AUTO] You >"));
         assertTrue(text.contains("System > AUTO -> CHAT"));
+    }
+
+    @Test
+    void adaptivePlanningConfigurationIsShownAtStartup() throws Exception {
+        LLMClient llm = countingClient(new AtomicInteger());
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ConsoleUi ui = new ConsoleUi(new PrintStream(output, true, StandardCharsets.UTF_8));
+        CliSessions sessions = CliAgentFactory.createProfiles(
+                llm, workspace, ui, PlanningMode.ADAPTIVE);
+
+        new InteractiveCli(sessions, ui, workspace).run(new BufferedReader(new StringReader("/exit\n")));
+
+        assertTrue(output.toString(StandardCharsets.UTF_8).contains("Planning: ADAPTIVE"));
     }
 
     @Test
