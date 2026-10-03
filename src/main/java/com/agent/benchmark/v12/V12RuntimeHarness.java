@@ -30,7 +30,7 @@ public final class V12RuntimeHarness {
     public V12RuntimeHarness(LLMClient client, Path workspace) {
         Objects.requireNonNull(client, "client must not be null");
         this.sessions = new CliSessions(
-                CliAgentFactory.createChat(client, AgentEventListener.NO_OP),
+                CliAgentFactory.createChat(client, workspace, AgentEventListener.NO_OP),
                 CliAgentFactory.createReadOnly(client, workspace, AgentEventListener.NO_OP),
                 CliAgentFactory.createCoding(client, workspace, AgentEventListener.NO_OP,
                         Path.of(".m2/repository"))

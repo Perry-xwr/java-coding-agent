@@ -15,11 +15,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 public class ToolRegistry {
     private final Map<String, Tool> tools = new LinkedHashMap<>();
     private final boolean actionOrientedDescriptions;
     private final boolean preciseEditDescriptions;
+    private Path workspaceRoot;
 
     public ToolRegistry() {
         this(false, false);
@@ -155,6 +157,7 @@ public class ToolRegistry {
             ObjectMapper objectMapper,
             WorkspacePathResolver pathResolver
     ) {
+        registry.bindWorkspace(pathResolver.root());
         registry.register(new ListFilesAdapter(pathResolver, objectMapper));
         registry.register(new FindFilesTool(pathResolver, objectMapper));
         registry.register(new ReadFileAdapter(pathResolver, objectMapper));
@@ -208,6 +211,18 @@ public class ToolRegistry {
                         tool.parameters()
                 ))
                 .toList();
+    }
+
+    /** Workspace root bound by workspace-backed builders, or empty for a generic registry. */
+    public Optional<Path> workspaceRoot() {
+        return Optional.ofNullable(workspaceRoot);
+    }
+
+    private void bindWorkspace(Path root) {
+        if (workspaceRoot != null && !workspaceRoot.equals(root)) {
+            throw new IllegalStateException("ToolRegistry is already bound to another workspace");
+        }
+        workspaceRoot = root;
     }
 
     private String description(Tool tool) {

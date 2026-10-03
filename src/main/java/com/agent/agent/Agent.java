@@ -4,7 +4,9 @@ import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
+import com.agent.llm.ToolDefinition;
 import com.agent.llm.StreamingLlmClient;
+import com.agent.environment.AgentEnvironment;
 import com.agent.tool.ToolResult;
 import com.agent.tool.ToolErrorCode;
 import com.agent.tool.ToolRegistry;
@@ -29,7 +31,7 @@ public class Agent {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final LLMClient llmClient;
-    private final ToolRegistry toolRegistry;
+    private final AgentEnvironment environment;
     private final Message systemMessage;
     private final int maxIterations;
     private final TaskMode taskMode;
@@ -41,6 +43,11 @@ public class Agent {
 
     public Agent(LLMClient llmClient, ToolRegistry toolRegistry) {
         this(llmClient, toolRegistry, DEFAULT_SYSTEM_PROMPT);
+    }
+
+    public Agent(LLMClient llmClient, AgentEnvironment environment) {
+        this(llmClient, environment, DEFAULT_SYSTEM_PROMPT, MAX_ITERATIONS, TaskMode.READ_ONLY,
+                false, false, AgentEventListener.NO_OP, false);
     }
 
     public Agent(LLMClient llmClient, ToolRegistry toolRegistry, String systemPrompt) {
@@ -116,8 +123,23 @@ public class Agent {
             AgentEventListener eventListener,
             boolean streamingEnabled
     ) {
+        this(llmClient, registryEnvironment(toolRegistry), systemPrompt, maxIterations, taskMode,
+                diagnosticRecovery, planningEnabled, eventListener, streamingEnabled);
+    }
+
+    public Agent(
+            LLMClient llmClient,
+            AgentEnvironment environment,
+            String systemPrompt,
+            int maxIterations,
+            TaskMode taskMode,
+            boolean diagnosticRecovery,
+            boolean planningEnabled,
+            AgentEventListener eventListener,
+            boolean streamingEnabled
+    ) {
         this.llmClient = Objects.requireNonNull(llmClient, "llmClient must not be null");
-        this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry must not be null");
+        this.environment = Objects.requireNonNull(environment, "environment must not be null");
         if (maxIterations < 1) {
             throw new IllegalArgumentException("maxIterations must be positive");
         }
@@ -131,6 +153,22 @@ public class Agent {
                 Objects.requireNonNull(systemPrompt, "systemPrompt must not be null")
         );
         history.add(systemMessage);
+    }
+
+    private static AgentEnvironment registryEnvironment(ToolRegistry registry) {
+        ToolRegistry checked = Objects.requireNonNull(registry, "toolRegistry must not be null");
+        return new AgentEnvironment() {
+            @Override
+            public ToolResult execute(ToolCall toolCall) {
+                Objects.requireNonNull(toolCall, "toolCall must not be null");
+                return checked.execute(toolCall.name(), toolCall.arguments());
+            }
+
+            @Override
+            public List<ToolDefinition> toolDefinitions() {
+                return checked.definitions();
+            }
+        };
     }
 
     public String run(String input) throws IOException {
@@ -164,7 +202,7 @@ public class Agent {
         int mutationGuardStep = 0;
         String previousFailedAction = null;
         int consecutiveIdenticalFailures = 0;
-        boolean mavenVerificationAvailable = toolRegistry.definitions().stream()
+        boolean mavenVerificationAvailable = environment.toolDefinitions().stream()
                 .anyMatch(definition -> "run_maven_test".equals(definition.name()));
 
         history.add(Message.user(task));
@@ -384,7 +422,7 @@ public class Agent {
                                 "Two consecutive edits failed for " + toolPath
                                         + "; read_file must refresh the current content before another edit"
                         )
-                        : toolRegistry.execute(toolCall.name(), toolCall.arguments());
+                        : environment.execute(toolCall);
                 eventListener.toolFinished(toolCall.name(), toolResult);
                 steps.add(new AgentStep(
                         steps.size() + 1,
@@ -412,7 +450,8 @@ public class Agent {
                     String rereadJson = serializeArguments(rereadArguments);
                     long rereadStartedAt = System.currentTimeMillis();
                     long rereadStartedNanos = System.nanoTime();
-                    ToolResult rereadResult = toolRegistry.execute("read_file", rereadJson);
+                    ToolResult rereadResult = environment.execute(new ToolCall(
+                            UUID.randomUUID().toString(), "read_file", rereadJson));
                     steps.add(new AgentStep(
                             steps.size() + 1,
                             AgentActionType.AUTO_REREAD,
@@ -538,12 +577,12 @@ public class Agent {
 
     private LLMResponse completeDecision(List<Message> messages) throws IOException {
         if (!streamingEnabled) {
-            return llmClient.chat(messages, toolRegistry.definitions());
+            return llmClient.chat(messages, environment.toolDefinitions());
         }
         boolean[] started = {false};
         try {
             if (llmClient instanceof StreamingLlmClient streamingClient) {
-                return streamingClient.stream(messages, toolRegistry.definitions(), delta -> {
+                return streamingClient.stream(messages, environment.toolDefinitions(), delta -> {
                     if (!started[0]) {
                         started[0] = true;
                         eventListener.assistantMessageStarted();
@@ -551,7 +590,7 @@ public class Agent {
                     eventListener.assistantTextDelta(delta);
                 });
             }
-            LLMResponse response = llmClient.chat(messages, toolRegistry.definitions());
+            LLMResponse response = llmClient.chat(messages, environment.toolDefinitions());
             String content = response.content();
             if (content != null && !content.isEmpty()) {
                 started[0] = true;

@@ -3,6 +3,7 @@ package com.agent;
 import com.agent.agent.Agent;
 import com.agent.agent.AgentEventListener;
 import com.agent.agent.TaskMode;
+import com.agent.environment.LocalWorkspaceEnvironment;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LlmClientFactory;
 import com.agent.tool.ToolRegistry;
@@ -110,16 +111,24 @@ public final class CliAgentFactory {
     ) {
         Objects.requireNonNull(client, "client must not be null");
         return new CliSessions(
-                createChat(client, eventListener),
+                createChat(client, workspace, eventListener),
                 createReadOnly(client, workspace, eventListener),
                 createCoding(client, workspace, eventListener)
         );
     }
 
     public static Agent createChat(LLMClient client, AgentEventListener eventListener) {
+        return createChat(client, Path.of("."), eventListener);
+    }
+
+    public static Agent createChat(
+            LLMClient client,
+            Path workspace,
+            AgentEventListener eventListener
+    ) {
         return new Agent(
                 Objects.requireNonNull(client, "client must not be null"),
-                new ToolRegistry(),
+                new LocalWorkspaceEnvironment(normalize(workspace), new ToolRegistry()),
                 CHAT_SYSTEM_PROMPT,
                 Agent.MAX_ITERATIONS,
                 TaskMode.READ_ONLY,
@@ -135,9 +144,10 @@ public final class CliAgentFactory {
             Path workspace,
             AgentEventListener eventListener
     ) {
+        ToolRegistry registry = ToolRegistry.withFileTools(normalize(workspace));
         return new Agent(
                 Objects.requireNonNull(client, "client must not be null"),
-                ToolRegistry.withFileTools(normalize(workspace)),
+                new LocalWorkspaceEnvironment(normalize(workspace), registry),
                 READ_SYSTEM_PROMPT,
                 Agent.MAX_ITERATIONS,
                 TaskMode.READ_ONLY,
@@ -172,7 +182,7 @@ public final class CliAgentFactory {
         );
         return new Agent(
                 Objects.requireNonNull(client, "client must not be null"),
-                registry,
+                new LocalWorkspaceEnvironment(normalizedWorkspace, registry),
                 V1_SYSTEM_PROMPT,
                 Agent.MAX_ITERATIONS,
                 TaskMode.CODE_MODIFICATION,
