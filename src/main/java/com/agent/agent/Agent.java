@@ -44,6 +44,7 @@ public class Agent {
     private final AdaptivePlanningRouter adaptivePlanningRouter = new AdaptivePlanningRouter();
     private final AgentEventListener eventListener;
     private final boolean streamingEnabled;
+    private final VerificationRepairPolicy verificationRepairPolicy;
     private final List<Message> history = new ArrayList<>();
 
     public Agent(LLMClient llmClient, ToolRegistry toolRegistry) {
@@ -145,7 +146,7 @@ public class Agent {
     ) {
         this(llmClient, environment, systemPrompt, maxIterations, taskMode,
                 diagnosticRecovery, planningEnabled, eventListener, streamingEnabled,
-                PlanningMode.REACTIVE);
+                PlanningMode.REACTIVE, VerificationRepairPolicy.GUIDED_REPAIR);
     }
 
     public Agent(
@@ -160,7 +161,24 @@ public class Agent {
             PlanningMode planningMode
     ) {
         this(llmClient, environment, systemPrompt, maxIterations, taskMode,
-                diagnosticRecovery, false, eventListener, streamingEnabled, planningMode);
+                diagnosticRecovery, false, eventListener, streamingEnabled, planningMode,
+                VerificationRepairPolicy.GUIDED_REPAIR);
+    }
+
+    public Agent(
+            LLMClient llmClient,
+            AgentEnvironment environment,
+            String systemPrompt,
+            int maxIterations,
+            TaskMode taskMode,
+            boolean diagnosticRecovery,
+            AgentEventListener eventListener,
+            boolean streamingEnabled,
+            PlanningMode planningMode,
+            VerificationRepairPolicy verificationRepairPolicy
+    ) {
+        this(llmClient, environment, systemPrompt, maxIterations, taskMode, diagnosticRecovery,
+                false, eventListener, streamingEnabled, planningMode, verificationRepairPolicy);
     }
 
     private Agent(
@@ -173,7 +191,8 @@ public class Agent {
             boolean planningEnabled,
             AgentEventListener eventListener,
             boolean streamingEnabled,
-            PlanningMode planningMode
+            PlanningMode planningMode,
+            VerificationRepairPolicy verificationRepairPolicy
     ) {
         this.llmClient = Objects.requireNonNull(llmClient, "llmClient must not be null");
         this.environment = Objects.requireNonNull(environment, "environment must not be null");
@@ -185,6 +204,8 @@ public class Agent {
         this.diagnosticRecovery = diagnosticRecovery;
         this.planningEnabled = planningEnabled;
         this.planningMode = Objects.requireNonNull(planningMode, "planningMode must not be null");
+        this.verificationRepairPolicy = Objects.requireNonNull(verificationRepairPolicy,
+                "verificationRepairPolicy must not be null");
         this.eventListener = Objects.requireNonNull(eventListener, "eventListener must not be null");
         this.streamingEnabled = streamingEnabled;
         this.systemMessage = Message.system(
@@ -264,7 +285,7 @@ public class Agent {
         boolean mavenVerificationAvailable = environment.toolDefinitions().stream()
                 .anyMatch(definition -> "run_maven_test".equals(definition.name()));
 
-        if (taskMode == TaskMode.CODE_MODIFICATION) {
+        if (taskMode == TaskMode.CODE_MODIFICATION && verificationRepairPolicy.guidedRepairEnabled()) {
             com.agent.environment.verification.VerificationCapability capability =
                     environment.verificationCapability("__capability_probe__.java");
             history.add(Message.system("WORKSPACE_VERIFICATION_CAPABILITY: workspace_kind="
@@ -530,8 +551,10 @@ public class Agent {
                 eventListener.toolStarted(toolCall.name(), parsedArguments);
                 String toolPath = Objects.toString(parsedArguments.get("path"), null);
                 boolean repairReadWasRequired = "read_file".equals(toolCall.name())
+                        && verificationRepairPolicy.guidedRepairEnabled()
                         && progress.requiresRepairRead(toolPath);
                 ToolResult toolResult = isWorkspaceMutationTool(toolCall.name())
+                        && verificationRepairPolicy.guidedRepairEnabled()
                         && progress.requiresRepairRead(toolPath)
                         ? ToolResult.failure(
                                 ToolErrorCode.REPAIR_REQUIRES_FRESH_READ,
@@ -579,6 +602,7 @@ public class Agent {
                             null, null, null, System.currentTimeMillis(), 0));
                 }
                 if (isSuccessfulWorkspaceMutation(toolCall.name(), toolResult)
+                        && verificationRepairPolicy.guidedRepairEnabled()
                         && progress.verificationFailure(toolPath) != null) {
                     steps.add(new AgentStep(steps.size() + 1, AgentActionType.VERIFICATION_REPAIR,
                             null, null, null, Map.of("event", "REPAIR_ATTEMPT", "file", toolPath,
@@ -662,17 +686,23 @@ public class Agent {
                         com.agent.environment.verification.VerificationCapability capability =
                                 environment.verificationCapability(toolPath);
                         boolean repairingFailedFile = progress.verificationFailure(toolPath) != null
-                                && progress.repairMutationCount(toolPath) > 0;
+                                && progress.repairMutationCount(toolPath) > 0
+                                && verificationRepairPolicy.guidedRepairEnabled();
                         VerificationResult verification = environment.verifyPostEdit(
                                 toolPath, progress.currentMutationSequence(toolPath));
-                        VerificationFailureContext failureContext = progress.observeVerification(
-                                verification,
-                                toolCall.name(),
-                                "step:" + (steps.size() - 1),
-                                capability,
-                                com.agent.environment.verification.VerificationDiagnosticParser.parse(
-                                        verification.verifierId(), verification.diagnosticSummary()),
-                                steps.size() + 1);
+                        VerificationFailureContext failureContext = null;
+                        if (verificationRepairPolicy.guidedRepairEnabled()) {
+                            failureContext = progress.observeVerification(
+                                    verification,
+                                    toolCall.name(),
+                                    "step:" + (steps.size() - 1),
+                                    capability,
+                                    com.agent.environment.verification.VerificationDiagnosticParser.parse(
+                                            verification.verifierId(), verification.diagnosticSummary()),
+                                    steps.size() + 1);
+                        } else {
+                            progress.observeVerification(verification);
+                        }
                         Map<String, Object> verificationMetadata = Map.of(
                                 "file", verification.file().toString(),
                                 "verifier", verification.verifierId(),
@@ -696,7 +726,8 @@ public class Agent {
                                 System.currentTimeMillis(),
                                 0
                         ));
-                        String observation = verificationObservation(verification, capability);
+                        String observation = verificationObservation(verification,
+                                verificationRepairPolicy.guidedRepairEnabled() ? capability : null);
                         history.add(Message.system(observation));
                         if (failureContext != null) {
                             String directive = RepairDirective.from(failureContext).text();
@@ -1156,6 +1187,16 @@ public class Agent {
         }
         if (!result.unavailableReason().isBlank()) {
             observation.append("\nunavailableReason: ").append(result.unavailableReason());
+        }
+        if (capability == null) {
+            if (result.status() == VerificationStatus.FAIL) {
+                observation.append("\nDo not claim completion; the current verification remains failed.");
+            } else if (result.status() == VerificationStatus.UNAVAILABLE) {
+                observation.append("\nThis is not a PASS. Do not claim that verification passed.");
+            } else if (result.status() == VerificationStatus.PASS) {
+                observation.append("\nThis verifies syntax/compilation only, not semantic correctness.");
+            }
+            return observation.toString();
         }
         if (capability.workspaceKind()
                 == com.agent.environment.verification.VerificationCapability.WorkspaceKind.STANDALONE

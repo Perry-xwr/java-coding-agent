@@ -4,6 +4,7 @@ import com.agent.agent.Agent;
 import com.agent.agent.AgentEventListener;
 import com.agent.agent.TaskMode;
 import com.agent.agent.PlanningMode;
+import com.agent.agent.VerificationRepairPolicy;
 import com.agent.environment.LocalWorkspaceEnvironment;
 import com.agent.environment.AgentEnvironment;
 import com.agent.llm.LLMClient;
@@ -224,6 +225,18 @@ public final class CliAgentFactory {
             AgentEventListener eventListener,
             PlanningMode planningMode
     ) {
+        return createCoding(client, environment, eventListener, planningMode,
+                VerificationRepairPolicy.GUIDED_REPAIR);
+    }
+
+    /** Creates the CODE profile with an explicit verification-repair policy for controlled ablations. */
+    public static Agent createCoding(
+            LLMClient client,
+            AgentEnvironment environment,
+            AgentEventListener eventListener,
+            PlanningMode planningMode,
+            VerificationRepairPolicy repairPolicy
+    ) {
         return new Agent(
                 Objects.requireNonNull(client, "client must not be null"),
                 Objects.requireNonNull(environment, "environment must not be null"),
@@ -233,7 +246,8 @@ public final class CliAgentFactory {
                 true,
                 Objects.requireNonNull(eventListener, "eventListener must not be null"),
                 true,
-                Objects.requireNonNull(planningMode, "planningMode must not be null")
+                Objects.requireNonNull(planningMode, "planningMode must not be null"),
+                Objects.requireNonNull(repairPolicy, "repairPolicy must not be null")
         );
     }
 
