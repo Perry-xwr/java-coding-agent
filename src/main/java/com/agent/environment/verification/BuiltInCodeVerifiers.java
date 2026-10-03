@@ -10,7 +10,6 @@ import java.nio.file.LinkOption;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 public final class BuiltInCodeVerifiers {
     private BuiltInCodeVerifiers() {
@@ -19,7 +18,7 @@ public final class BuiltInCodeVerifiers {
     public static VerifierRegistry registry(ProcessRunner runner) {
         return new VerifierRegistry(List.of(
                 new CommandVerifier("python-py-compile", ".py", runner, file ->
-                        new Command(List.of("python", "-m", "py_compile", file.toString()), true)),
+                        new Command(List.of("python", "-c", PYTHON_SYNTAX_CHECK, file.toString()), true)),
                 new CommandVerifier("javascript-node-check", ".js", runner, file ->
                         new Command(List.of("node", "--check", file.toString()), false), ".mjs", ".cjs"),
                 new CommandVerifier("c-gcc-syntax", ".c", runner, file ->
@@ -30,12 +29,24 @@ public final class BuiltInCodeVerifiers {
         ));
     }
 
+    private static final String PYTHON_SYNTAX_CHECK = "import sys, tokenize\n"
+            + "try:\n"
+            + "    with tokenize.open(sys.argv[1]) as source_file:\n"
+            + "        source = source_file.read()\n"
+            + "    compile(source, sys.argv[1], 'exec')\n"
+            + "except SyntaxError as error:\n"
+            + "    print(f'{type(error).__name__}: {error}', file=sys.stderr)\n"
+            + "    raise SystemExit(10)\n"
+            + "except Exception as error:\n"
+            + "    print(f'{type(error).__name__}: {error}', file=sys.stderr)\n"
+            + "    raise SystemExit(20)\n";
+
     @FunctionalInterface
     private interface CommandFactory {
         Command command(Path file);
     }
 
-    private record Command(List<String> arguments, boolean isolatePythonCache) {
+    private record Command(List<String> arguments, boolean pythonSyntaxCheck) {
     }
 
     private static final class CommandVerifier implements CodeVerifier {
@@ -68,17 +79,19 @@ public final class BuiltInCodeVerifiers {
         @Override
         public VerificationResult verify(Path file, Path workspaceRoot, long sequence) {
             Command command = commandFactory.command(file);
-            Path temporaryDirectory = null;
             try {
-                Map<String, String> environment = Map.of();
-                if (command.isolatePythonCache()) {
-                    temporaryDirectory = Files.createTempDirectory("agent-python-verify-");
-                    environment = Map.of("PYTHONPYCACHEPREFIX", temporaryDirectory.toString());
-                }
                 ProcessExecutionResult result = runner.run(command.arguments(), workspaceRoot, TIMEOUT,
-                        OUTPUT_LIMIT, environment);
+                        OUTPUT_LIMIT);
                 if (result.timedOut()) {
                     return unavailable(file, sequence, id, "Verifier exceeded 15 second timeout");
+                }
+                if (command.pythonSyntaxCheck() && result.exitCode() == 20) {
+                    return new VerificationResult(VerificationStatus.UNAVAILABLE, file, id,
+                            result.output(), "Python verifier could not read the source or failed internally", sequence);
+                }
+                if (command.pythonSyntaxCheck() && result.exitCode() != 0 && result.exitCode() != 10) {
+                    return new VerificationResult(VerificationStatus.UNAVAILABLE, file, id,
+                            result.output(), "Python verifier exited unexpectedly with code " + result.exitCode(), sequence);
                 }
                 return new VerificationResult(result.exitCode() == 0 ? VerificationStatus.PASS
                         : VerificationStatus.FAIL, file, id, result.output(), "", sequence);
@@ -87,8 +100,8 @@ public final class BuiltInCodeVerifiers {
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 return unavailable(file, sequence, id, "Verifier execution was interrupted");
-            } finally {
-                deleteTemporaryOutput(temporaryDirectory);
+            } catch (RuntimeException exception) {
+                return unavailable(file, sequence, id, "Verifier failed internally");
             }
         }
     }
@@ -129,6 +142,8 @@ public final class BuiltInCodeVerifiers {
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 return unavailable(file, sequence, id(), "Verifier execution was interrupted");
+            } catch (RuntimeException exception) {
+                return unavailable(file, sequence, id(), "Verifier failed internally");
             } finally {
                 deleteTemporaryOutput(outputDirectory);
             }
@@ -136,15 +151,13 @@ public final class BuiltInCodeVerifiers {
     }
 
     private static void deleteTemporaryOutput(Path directory) {
-        if (directory == null) {
-            return;
-        }
+        if (directory == null) return;
         try (var paths = Files.walk(directory)) {
             for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
                 Files.deleteIfExists(path);
             }
         } catch (IOException ignored) {
-            // This is an isolated temporary compiler-output directory; cleanup failure does not alter verification.
+            // Isolated compiler output cleanup must not change the verification result.
         }
     }
 

@@ -40,7 +40,9 @@ class PostEditVerificationServiceTest {
         assertEquals(VerificationStatus.PASS, service.verify("c.c", 3).status());
         assertEquals(VerificationStatus.PASS, service.verify("d.cc", 4).status());
         assertEquals(VerificationStatus.PASS, service.verify("e.java", 5).status());
-        assertEquals(List.of("python", "-m", "py_compile"), commands.get(0).subList(0, 3));
+        assertEquals(List.of("python", "-c"), commands.get(0).subList(0, 2));
+        assertTrue(commands.get(0).get(2).contains("compile(source, sys.argv[1], 'exec')"));
+        assertEquals(workspace.resolve("a.py").toString(), commands.get(0).get(3));
         assertEquals(List.of("node", "--check"), commands.get(1).subList(0, 2));
         assertEquals(List.of("gcc", "-fsyntax-only"), commands.get(2).subList(0, 2));
         assertEquals(List.of("g++", "-fsyntax-only"), commands.get(3).subList(0, 2));
@@ -51,7 +53,7 @@ class PostEditVerificationServiceTest {
     void exitCodeFailureIsFailWhileMissingExecutableAndTimeoutAreUnavailable() throws Exception {
         Files.writeString(workspace.resolve("broken.py"), "def x(:\n");
         ProcessRunner syntaxFailure = (command, cwd, timeout, outputLimit) ->
-                new ProcessExecutionResult(1, false, "SyntaxError: invalid syntax\n".repeat(500), false, 4);
+                new ProcessExecutionResult(10, false, "SyntaxError: invalid syntax\n".repeat(500), false, 4);
         VerificationResult failed = service(syntaxFailure).verify("broken.py", 7);
         assertEquals(VerificationStatus.FAIL, failed.status());
         assertTrue(failed.diagnosticSummary().contains("SyntaxError"));
@@ -78,7 +80,8 @@ class PostEditVerificationServiceTest {
     @Test
     void nonZeroCompilerExitIsFailForEachSupportedLanguage() throws Exception {
         ProcessRunner invalid = (command, cwd, timeout, outputLimit) ->
-                new ProcessExecutionResult(1, false, "syntax error", false, 1);
+                new ProcessExecutionResult(command.get(0).equals("python") ? 10 : 1,
+                        false, "syntax error", false, 1);
         for (String name : List.of("invalid.py", "invalid.js", "invalid.c", "invalid.cpp", "Invalid.java")) {
             Files.writeString(workspace.resolve(name), "invalid");
             assertEquals(VerificationStatus.FAIL, service(invalid).verify(name, 1).status(), name);
@@ -128,24 +131,22 @@ class PostEditVerificationServiceTest {
     }
 
     @Test
-    void pythonCacheIsDirectedOutsideWorkspace() throws Exception {
+    void pythonVerifierDoesNotSetCacheEnvironmentOverrides() throws Exception {
         Files.writeString(workspace.resolve("cache.py"), "pass\n");
         AtomicReference<Map<String, String>> seen = new AtomicReference<>(Map.of());
         ProcessRunner runner = new ProcessRunner() {
-            @Override
-            public ProcessExecutionResult run(List<String> command, Path cwd, Duration timeout, int limit) {
+            @Override public ProcessExecutionResult run(List<String> command, Path cwd, Duration timeout, int limit) {
+                seen.set(Map.of());
                 return new ProcessExecutionResult(0, false, "", false, 1);
             }
-
-            @Override
-            public ProcessExecutionResult run(List<String> command, Path cwd, Duration timeout, int limit,
-                                              Map<String, String> environment) {
+            @Override public ProcessExecutionResult run(List<String> command, Path cwd, Duration timeout, int limit,
+                                                        Map<String, String> environment) {
                 seen.set(environment);
                 return new ProcessExecutionResult(0, false, "", false, 1);
             }
         };
         assertEquals(VerificationStatus.PASS, service(runner).verify("cache.py", 1).status());
-        assertTrue(seen.get().containsKey("PYTHONPYCACHEPREFIX"));
+        assertTrue(seen.get().isEmpty());
     }
 
     @Test
@@ -159,6 +160,51 @@ class PostEditVerificationServiceTest {
         assertEquals(VerificationStatus.PASS, valid.status());
         assertEquals(VerificationStatus.FAIL, service.verify("invalid.py", 2).status());
         assertFalse(Files.exists(workspace.resolve("__pycache__")));
+        try (var paths = Files.walk(workspace)) {
+            assertFalse(paths.anyMatch(path -> path.toString().endsWith(".pyc")));
+        }
+    }
+
+    @Test
+    void pythonHelperMapsOnlySyntaxExitToFailAndInfrastructureExitToUnavailable() throws Exception {
+        Files.writeString(workspace.resolve("source.py"), "pass\n");
+        ProcessRunner syntax = (command, cwd, timeout, limit) ->
+                new ProcessExecutionResult(10, false, "SyntaxError: invalid syntax", false, 1);
+        ProcessRunner infra = (command, cwd, timeout, limit) ->
+                new ProcessExecutionResult(20, false, "PermissionError: denied", false, 1);
+        ProcessRunner unexpected = (command, cwd, timeout, limit) ->
+                new ProcessExecutionResult(1, false, "unexpected", false, 1);
+        assertEquals(VerificationStatus.FAIL, service(syntax).verify("source.py", 1).status());
+        assertEquals(VerificationStatus.UNAVAILABLE, service(infra).verify("source.py", 1).status());
+        assertEquals(VerificationStatus.UNAVAILABLE, service(unexpected).verify("source.py", 1).status());
+    }
+
+    @Test
+    void pythonVerifierWorksOnDeepLongPathsWithoutCreatingCacheArtifacts() throws Exception {
+        Path deep = workspace;
+        for (int index = 0; index < 5; index++) {
+            deep = deep.resolve("long-fixture-directory-segment-" + index);
+        }
+        Files.createDirectories(deep);
+        Path valid = deep.resolve("valid_source.py");
+        Path invalid = deep.resolve("invalid_source.py");
+        Files.writeString(valid, "# coding: utf-8\ndef café():\n    return 'ok'\n");
+        Files.writeString(invalid, "def café(:\n    return 'broken'\n");
+        assertTrue(valid.toString().length() > 200, "test path should exercise deep-path behavior");
+        assertTrue(valid.toString().length() < 260,
+                "source path itself stays in legacy Windows path range; old pycache mirroring exceeded it");
+
+        PostEditVerificationService local = new PostEditVerificationService(workspace,
+                BuiltInCodeVerifiers.registry(new com.agent.tool.execution.DefaultProcessRunner()));
+        VerificationResult validResult = local.verify(workspace.relativize(valid).toString(), 1);
+        VerificationResult invalidResult = local.verify(workspace.relativize(invalid).toString(), 2);
+        assumeTrue(validResult.status() != VerificationStatus.UNAVAILABLE, validResult.unavailableReason());
+        assertEquals(VerificationStatus.PASS, validResult.status(), validResult.toString());
+        assertEquals(VerificationStatus.FAIL, invalidResult.status(), invalidResult.toString());
+        try (var paths = Files.walk(workspace)) {
+            assertFalse(paths.anyMatch(path -> path.toString().endsWith(".pyc")
+                    || path.getFileName().toString().equals("__pycache__")));
+        }
     }
 
     @Test
