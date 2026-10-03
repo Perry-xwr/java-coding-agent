@@ -40,7 +40,7 @@ public final class RepairReliabilityBenchmarkMain {
         }
         verifyFixtures(repo, manifest);
         verifyInitialFixtures(repo, manifest);
-        verifyLocalVerifiers();
+        verifyLocalVerifiers(repo);
         if (options.preflightOnly) {
             System.out.println("Preflight PASS: GLM glm-4-flash, explicit proxy TCP, fixtures and local verifiers.");
             return;
@@ -144,8 +144,10 @@ public final class RepairReliabilityBenchmarkMain {
         }
     }
 
-    private static void verifyLocalVerifiers() throws IOException {
-        Path temp = Files.createTempDirectory("repair-reliability-verifier-preflight-");
+    private static void verifyLocalVerifiers(Path repository) throws IOException {
+        Path target = repository.resolve("target");
+        Files.createDirectories(target);
+        Path temp = Files.createTempDirectory(target, "repair-reliability-verifier-preflight-");
         try {
             Path pyGood = Files.writeString(temp.resolve("good.py"), "def good():\n    return 1\n");
             Path pyBad = Files.writeString(temp.resolve("bad.py"), "def broken(:\n    return 1\n");
