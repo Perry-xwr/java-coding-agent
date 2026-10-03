@@ -34,6 +34,14 @@ For each SIMPLE task, report `PLAN_EXECUTE requests - REACTIVE requests` and `AD
 
 ## Known Limitations
 
-This is a small deterministic-protocol DEV set, not a statistical evaluation. The heuristic may misclassify natural language; a route mismatch does not imply task failure, and a route match does not imply task success. No independent adaptive evaluation has been run.
+This is a small deterministic-protocol DEV set, not a statistical evaluation. The heuristic may misclassify natural language; a route mismatch does not imply task failure, and a route match does not imply task success. No completed live adaptive evaluation has been run.
 
-**NO LIVE RESULTS YET.**
+## Live DEV Evaluation
+
+### Experimental Commit and Configuration
+
+The frozen benchmark commit is `5f74a0424bb9134129a69ae603f218bd96d9e669`; the runtime identity supplied to the run was V1.7-A commit `fbf3be7`. The provider was GLM `glm-4-flash`, with nine DEV tasks, three modes, and a per-condition cap of 12 provider requests. One credential smoke request succeeded before the experiment; it did not use a task workspace or tools.
+
+### Attempt 1 Status
+
+The first live attempt was aborted during Round 1 after 14 infrastructure failures. The first recorded provider failure was a connection reset; subsequent requests could not connect to the local proxy at `127.0.0.1:7897`. This reached the frozen protocol's stop threshold, so Round 2 was not run. The attempt is incomplete and is not a completed Adaptive evaluation. No comparative conclusion can be drawn. Raw diagnostic artifacts remain in the ignored local `benchmark-runs/adaptive-planning-v1/` directory.

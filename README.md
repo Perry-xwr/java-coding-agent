@@ -127,6 +127,10 @@ The repository contains three evaluation tracks:
 
 In two observed paired DEV rounds over the same eight `memory-v1` tasks, Legacy Context scored 6/8 in both rounds and Structured Memory scored 7/8 in both rounds. This is a small descriptive result, not a statistically significant estimate: the task set is small, model behavior is stochastic, and one task has a known completion-contract limitation. The cleanest repeated signal was lower cross-turn overhead when continuing from the last mutation. See [the memory-v1 protocol](benchmark/memory-v1/README.md).
 
+### Adaptive Planning Evaluation
+
+The `adaptive-planning-v1` protocol compares REACTIVE, PLAN_EXECUTE, and a zero-LLM heuristic ADAPTIVE router on nine DEV tasks. Its first live round was interrupted after repeated local proxy connection failures; the protocol correctly stopped before Round 2. The available single-round observations are incomplete and descriptive only, with no paired-repeatability or superiority claim. See [the adaptive-planning protocol and run note](benchmark/adaptive-planning-v1/README.md).
+
 ## Quick Start
 
 Requirements: Java 17, Maven 3.9+, and a GLM API key by default. The default GLM backend continues to use the configured HTTP proxy at `127.0.0.1:7897`.
