@@ -31,7 +31,7 @@ public final class MemoryRuntimeHarness {
         Path root = Objects.requireNonNull(workspace, "workspace must not be null")
                 .toAbsolutePath().normalize();
         this.sessions = new CliSessions(
-                CliAgentFactory.createChat(client, AgentEventListener.NO_OP),
+                CliAgentFactory.createChat(client, root, AgentEventListener.NO_OP),
                 CliAgentFactory.createReadOnly(client, root, AgentEventListener.NO_OP),
                 CliAgentFactory.createCoding(client, root, AgentEventListener.NO_OP,
                         root.resolve(".m2/repository"))

@@ -45,6 +45,11 @@ public class GlmClient implements StreamingLlmClient {
                 createHttpClient(false), new ObjectMapper());
     }
 
+    static GlmClient configured(String apiKey, String endpoint, String model, boolean benchmark) {
+        return new GlmClient(apiKey, endpoint, model,
+                createHttpClient(!benchmark), new ObjectMapper());
+    }
+
     GlmClient(String apiKey, String endpoint, String model,
               OkHttpClient httpClient, ObjectMapper objectMapper) {
         this.apiKey = requireNonBlank(apiKey, "apiKey");

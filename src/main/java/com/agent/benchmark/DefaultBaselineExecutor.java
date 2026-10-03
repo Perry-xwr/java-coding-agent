@@ -1,8 +1,10 @@
 package com.agent.benchmark;
 
 import com.agent.agent.Agent;
+import com.agent.agent.AgentEventListener;
 import com.agent.agent.AgentRunResult;
 import com.agent.agent.TaskMode;
+import com.agent.environment.LocalWorkspaceEnvironment;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
@@ -128,7 +130,7 @@ public final class DefaultBaselineExecutor implements BenchmarkAgentExecutor {
         boolean planning = baseline == BaselineType.REACT_PLANNING;
         return new Agent(
                 policy,
-                registry,
+                new LocalWorkspaceEnvironment(workspace, registry),
                 diagnosticRecovery
                         ? baseline == BaselineType.REACT_PRECISE_EDIT
                         ? PRECISE_EDIT_SYSTEM_PROMPT
@@ -139,7 +141,9 @@ public final class DefaultBaselineExecutor implements BenchmarkAgentExecutor {
                         ? TaskMode.CODE_MODIFICATION
                         : TaskMode.READ_ONLY,
                 diagnosticRecovery,
-                planning
+                planning,
+                AgentEventListener.NO_OP,
+                false
         )
                 .runWithTrajectory(task.description());
     }

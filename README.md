@@ -109,7 +109,7 @@ In two observed paired DEV rounds over the same eight `memory-v1` tasks, Legacy 
 
 ## Quick Start
 
-Requirements: Java 17, Maven 3.9+, a GLM API key, and the currently configured HTTP proxy at `127.0.0.1:7897`.
+Requirements: Java 17, Maven 3.9+, and a GLM API key by default. The default GLM backend continues to use the configured HTTP proxy at `127.0.0.1:7897`.
 
 ```powershell
 $env:GLM_API_KEY="YOUR_KEY"
@@ -118,6 +118,8 @@ mvn exec:java '-Dexec.mainClass=com.agent.Main'
 ```
 
 The CLI starts in `AUTO` mode and deterministically routes clear workspace reads to `READ`, explicit workspace changes to `CODE`, and general questions to `CHAT`. Use `/chat`, `/read`, `/code`, or `/auto` to override the active mode. Output is streamed as it arrives. In `CODE`, successful writes must be reread before completion, and Java changes require a successful Maven test when the tool is available. Enter `clear` in `AUTO` mode to reset all profile histories and the short-lived workspace reference context. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
+
+The default model backend is GLM (`MODEL_PROVIDER=glm`, the default) and reads `GLM_API_KEY`. An optional non-streaming OpenAI-compatible backend can be selected with `MODEL_PROVIDER=openai-compatible`, `MODEL_BASE_URL`, and `MODEL_NAME`; `MODEL_API_KEY` is optional for local or otherwise unauthenticated endpoints. This backend supports chat completions and function/tool calling, but streaming remains GLM-only. Backend-specific settings are read from environment variables; no key is stored in the repository.
 
 For pasted multi-line prompts, normal paste capture is supported. `/begin` followed by `/end` remains the reliable explicit fallback when terminal input timing is ambiguous.
 
