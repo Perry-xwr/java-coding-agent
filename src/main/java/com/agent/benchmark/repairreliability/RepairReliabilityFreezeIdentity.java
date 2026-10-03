@@ -52,7 +52,7 @@ public final class RepairReliabilityFreezeIdentity {
                 "src/main/java/com/agent/agent/AgentProgress.java",
                 "src/main/java/com/agent/agent/VerificationFailureContext.java",
                 "src/main/java/com/agent/agent/RepairDirective.java",
-                "src/main/java/com/agent/agent/DiagnosticLocation.java",
+                "src/main/java/com/agent/environment/verification/DiagnosticLocation.java",
                 "src/main/java/com/agent/agent/VerificationRepairPolicy.java",
                 "src/main/java/com/agent/CliAgentFactory.java",
                 "src/main/java/com/agent/environment/verification/VerificationDiagnosticParser.java",
