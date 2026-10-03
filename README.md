@@ -63,11 +63,18 @@ Working memory is session-level, bounded, non-persistent, and grounded in user r
 
 ## Planning
 
-The CLI defaults to `REACTIVE`, with no separate planning request. Set `PLANNING_MODE=plan-execute`
-to enable the experimental structured PLAN → EXECUTE flow for the CODE profile. It uses the same
-model, Agent runtime, environment, and tools; the plan is execution guidance, not a verified fact,
-and replanning is bounded to one attempt. This is experimental support and has not been shown to
-improve task success. It does not add multi-agent orchestration.
+The CODE profile defaults to `REACTIVE`. Set `PLANNING_MODE=plan-execute` to opt into the
+experimental `PLAN_EXECUTE` strategy: each task run performs an independent PLAN → EXECUTE flow
+with at most one bounded REPLAN. The plan guides execution; it is not a verified workspace fact.
+This is optional experimental support, not multi-agent orchestration.
+
+### Planning Ablation
+
+In two paired live rounds over the same eight `planning-v1` DEV tasks, `REACTIVE` scored 2/8 then
+5/8, and `PLAN_EXECUTE` scored 3/8 then 2/8. Across the same eight tasks repeated twice (16 task-runs
+per mode, not independent tasks), the descriptive totals were 7/16 with 94 requests for REACTIVE
+and 5/16 with 119 requests for PLAN_EXECUTE. No repeatable success advantage was observed; this is
+a small, stochastic DEV experiment, not a statistical result. See [planning-v1 results](benchmark/planning-v1/README.md).
 
 ## Safety Model
 
