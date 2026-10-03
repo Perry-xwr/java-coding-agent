@@ -58,6 +58,7 @@ class PostEditVerificationAgentTest {
         Script script = new Script(
                 call("read_file", Map.of("path", "HanoiTowerSolver.cpp")),
                 call("apply_patch", Map.of("path", "HanoiTowerSolver.cpp", "oldText", "int main() {", "newText", "() {")),
+                call("read_file", Map.of("path", "HanoiTowerSolver.cpp")),
                 call("apply_patch", Map.of("path", "HanoiTowerSolver.cpp", "oldText", "() {", "newText", "int main() {")),
                 finalAnswer("Repaired and syntax verified."));
         Agent agent = agent(workspace, contentVerifier("HanoiTowerSolver.cpp", "int main() {"), script);
@@ -69,6 +70,11 @@ class PostEditVerificationAgentTest {
         assertEquals(List.of(VerificationStatus.FAIL, VerificationStatus.PASS), statuses(result));
         assertTrue(script.observedMessages.stream().anyMatch(messages -> messages.contains("POST_EDIT_VERIFICATION")
                 && messages.contains("synthetic syntax diagnostic")));
+        assertTrue(result.trajectory().steps().stream().anyMatch(step -> step.toolResult() != null
+                && step.toolResult().errorCode() == com.agent.tool.ToolErrorCode.REPAIR_REQUIRES_FRESH_READ) == false);
+        assertEquals(1, result.trajectory().steps().stream().filter(step ->
+                step.actionType() == AgentActionType.VERIFICATION_REPAIR
+                        && "REPAIR_RECOVERED".equals(step.arguments().get("event"))).count());
     }
 
     @Test
@@ -81,6 +87,7 @@ class PostEditVerificationAgentTest {
                 call("read_file", Map.of("path", "B.py")),
                 call("apply_patch", Map.of("path", "B.py", "oldText", "1", "newText", "broken")),
                 finalAnswer("finished"),
+                call("read_file", Map.of("path", "B.py")),
                 call("apply_patch", Map.of("path", "B.py", "oldText", "broken", "newText", "3")),
                 finalAnswer("finished"));
         Agent agent = agent(workspace, verifierByContent(), script);
@@ -92,6 +99,63 @@ class PostEditVerificationAgentTest {
                 VerificationStatus.PASS), statuses(result));
         assertTrue(Files.readString(workspace.resolve("A.py")).contains("2"));
         assertTrue(Files.readString(workspace.resolve("B.py")).contains("3"));
+    }
+
+    @Test
+    void rejectsImmediateRepairUntilFreshReadThenAllowsRepair() throws Exception {
+        Files.writeString(workspace.resolve("HanoiTowerSolver.cpp"), "int main() { return 0; }\n");
+        Script script = new Script(
+                call("apply_patch", Map.of("path", "HanoiTowerSolver.cpp", "oldText", "int main", "newText", "broken")),
+                call("apply_patch", Map.of("path", "HanoiTowerSolver.cpp", "oldText", "broken", "newText", "repaired")),
+                call("read_file", Map.of("path", "HanoiTowerSolver.cpp")),
+                call("apply_patch", Map.of("path", "HanoiTowerSolver.cpp", "oldText", "broken", "newText", "int main")),
+                finalAnswer("repaired"));
+        AgentRunResult result = agent(workspace, contentVerifier("HanoiTowerSolver.cpp", "int main"), script)
+                .runWithTrajectory("repair file");
+        assertTrue(result.trajectory().completed());
+        assertEquals(1, result.trajectory().steps().stream().filter(step -> step.toolResult() != null
+                && step.toolResult().errorCode() == com.agent.tool.ToolErrorCode.REPAIR_REQUIRES_FRESH_READ).count());
+        assertEquals(1, result.trajectory().steps().stream().filter(step -> step.actionType()
+                == AgentActionType.VERIFICATION_REPAIR && "REPAIR_READ_SATISFIED".equals(step.arguments().get("event"))).count());
+    }
+
+    @Test
+    void repeatedFailureCreatesNewContextAndReactivatesReadRequirement() throws Exception {
+        Files.writeString(workspace.resolve("HanoiTowerSolver.cpp"), "int main() { return 0; }\n");
+        Script script = new Script(
+                call("apply_patch", Map.of("path", "HanoiTowerSolver.cpp", "oldText", "int main", "newText", "broken")),
+                call("read_file", Map.of("path", "HanoiTowerSolver.cpp")),
+                call("apply_patch", Map.of("path", "HanoiTowerSolver.cpp", "oldText", "broken", "newText", "still broken")),
+                finalAnswer("done"), finalAnswer("done"));
+        AgentRunResult result = agent(workspace, alwaysFailingVerifier("HanoiTowerSolver.cpp"), script)
+                .runWithTrajectory("repair file");
+        assertFalse(result.trajectory().completed());
+        assertEquals(2, result.trajectory().steps().stream().filter(step -> step.actionType()
+                == AgentActionType.VERIFICATION_REPAIR && "REPAIR_REQUIRED".equals(step.arguments().get("event"))).count());
+        assertTrue(script.observedMessages.stream().anyMatch(messages -> messages.contains("Repeated verification failure")));
+    }
+
+    @Test
+    void repairOfOneFailedFileDoesNotClearAnotherFileFailure() throws Exception {
+        Files.writeString(workspace.resolve("A.py"), "value = 1\n");
+        Files.writeString(workspace.resolve("B.py"), "value = 1\n");
+        Script script = new Script(
+                call("apply_patch", Map.of("path", "A.py", "oldText", "1", "newText", "broken")),
+                call("apply_patch", Map.of("path", "B.py", "oldText", "1", "newText", "broken")),
+                finalAnswer("done"),
+                call("read_file", Map.of("path", "A.py")),
+                call("apply_patch", Map.of("path", "A.py", "oldText", "broken", "newText", "2")),
+                finalAnswer("done"),
+                call("read_file", Map.of("path", "B.py")),
+                call("apply_patch", Map.of("path", "B.py", "oldText", "broken", "newText", "2")),
+                finalAnswer("done"));
+        AgentRunResult result = agent(workspace, verifierByContent(), script).runWithTrajectory("repair two files");
+        assertTrue(result.trajectory().completed(), result.trajectory().terminationReason() + " "
+                + result.trajectory().steps().stream().map(step -> step.actionType() + ":" + step.toolName()
+                        + ":" + (step.toolResult() == null ? "" : step.toolResult().errorCode())
+                        + ":" + step.arguments().get("event")).toList());
+        assertEquals(List.of(VerificationStatus.FAIL, VerificationStatus.FAIL, VerificationStatus.PASS,
+                VerificationStatus.PASS), statuses(result));
     }
 
     @Test
@@ -110,6 +174,8 @@ class PostEditVerificationAgentTest {
         assertEquals(List.of(VerificationStatus.UNAVAILABLE), statuses(result));
         assertFalse(result.finalAnswer().contains("Tests passed"));
         assertTrue(result.finalAnswer().contains("UNAVAILABLE"));
+        assertEquals(0, result.trajectory().steps().stream().filter(step -> step.actionType()
+                == AgentActionType.VERIFICATION_REPAIR).count());
         assertTrue(script.observedMessages.stream().anyMatch(messages -> messages.contains("UNAVAILABLE")
                 && messages.contains("not installed")));
     }
@@ -136,6 +202,8 @@ class PostEditVerificationAgentTest {
 
         assertTrue(result.trajectory().completed());
         assertEquals(1, commands.size());
+        assertEquals("MAVEN", environment.verificationCapability("App.java").workspaceKind().name());
+        assertEquals("maven", environment.verificationCapability("App.java").recommendedVerifier());
         assertTrue(result.trajectory().steps().stream().anyMatch(step ->
                 step.actionType() == AgentActionType.POST_EDIT_VERIFICATION
                         && "NOT_APPLICABLE".equals(step.arguments().get("status"))
@@ -165,6 +233,8 @@ class PostEditVerificationAgentTest {
         assertEquals(1, result.trajectory().steps().stream().filter(step ->
                 step.actionType() == AgentActionType.AUTO_REREAD).count());
         assertEquals(List.of(VerificationStatus.PASS), statuses(result));
+        assertEquals(0, result.trajectory().steps().stream().filter(step -> step.actionType()
+                == AgentActionType.VERIFICATION_REPAIR).count());
     }
 
     @Test
@@ -189,6 +259,10 @@ class PostEditVerificationAgentTest {
         assertEquals("PASS", result.trajectory().steps().stream()
                 .filter(step -> step.actionType() == AgentActionType.POST_EDIT_VERIFICATION)
                 .findFirst().orElseThrow().arguments().get("status"));
+        assertEquals("STANDALONE", environment.verificationCapability("Standalone.java").workspaceKind().name());
+        assertEquals("javac", environment.verificationCapability("Standalone.java").recommendedVerifier());
+        assertTrue(script.observedMessages.stream().anyMatch(messages -> messages.contains("workspace_kind=STANDALONE")
+                && messages.contains("project verifier=javac") && messages.contains("Maven project not detected")));
     }
 
     private static Agent agent(Path root, CodeVerifier verifier, Script script) {

@@ -91,7 +91,7 @@ class EditReliabilityBenchmarkProtocolTest {
     void postEditFailureFeedsRepairAndIndependentEvaluatorPassesFinalState() throws Exception {
         EditReliabilityTask task = pythonTask("repair", "def value():\n    return 1\n", "return 1", "return (", "return 2");
         ScriptedClient fake = new ScriptedClient(read("source.py"), patch("source.py", "return 1", "return ("),
-                done(), patch("source.py", "return (", "return 2"), done());
+                done(), read("source.py"), patch("source.py", "return (", "return 2"), done());
         var result = run(task, EditReliabilityMode.POST_EDIT_VERIFY, fake);
         assertTrue(result.evaluation().taskSuccess(), result.evaluation().failures() + " final="
                 + Files.readString(result.workspace().resolve("source.py")) + " trajectory="
@@ -239,7 +239,7 @@ class EditReliabilityBenchmarkProtocolTest {
         assertTrue(baseline.evaluation().syntaxFalseSuccess());
         assertFalse(baseline.evaluation().taskSuccess());
         ScriptedClient fake = new ScriptedClient(read("a.py"), patch("a.py", "return 1", "return 2"),
-                read("b.py"), patch("b.py", "return 1", "return 2("), done(),
+                read("b.py"), patch("b.py", "return 1", "return 2("), done(), read("b.py"),
                 patch("b.py", "return 2(", "return 2"), done());
         var result = run(task, EditReliabilityMode.POST_EDIT_VERIFY, fake);
         assertTrue(result.evaluation().taskSuccess(), result.evaluation().failures() + " final="

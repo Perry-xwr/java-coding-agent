@@ -4,6 +4,8 @@ import com.agent.tool.ToolResult;
 import com.agent.tool.ToolErrorCode;
 import com.agent.environment.verification.VerificationResult;
 import com.agent.environment.verification.VerificationStatus;
+import com.agent.environment.verification.DiagnosticLocation;
+import com.agent.environment.verification.VerificationCapability;
 
 import java.util.Map;
 import java.util.HashSet;
@@ -42,6 +44,14 @@ public final class AgentProgress {
     private long mutationSequence;
     private final Map<String, Long> mutationSequences = new HashMap<>();
     private final Map<String, VerificationResult> verificationResults = new HashMap<>();
+    private final Map<String, VerificationFailureContext> verificationFailures = new HashMap<>();
+    private final Map<String, Integer> verificationFailureCounts = new HashMap<>();
+    private final Map<String, Integer> repairMutationCounts = new HashMap<>();
+    private final Map<String, Integer> totalRepairMutationCounts = new HashMap<>();
+    private final Map<String, Integer> successfulRecoveryCounts = new HashMap<>();
+    private final Map<String, String> lastMutationTools = new HashMap<>();
+    private final Map<String, Integer> lastSuccessfulReadSteps = new HashMap<>();
+    private final Map<String, String> lastSuccessfulReadIdentities = new HashMap<>();
 
     public void observe(
             String toolName,
@@ -63,6 +73,13 @@ public final class AgentProgress {
                 long sequence = ++mutationSequence;
                 String key = pathKey(lastModifiedFile);
                 mutationSequences.put(key, sequence);
+                lastMutationTools.put(key, toolName);
+                if (verificationFailures.containsKey(key)
+                        && lastSuccessfulReadSteps.getOrDefault(key, 0)
+                        > verificationFailures.get(key).failureStep()) {
+                    repairMutationCounts.merge(key, 1, Integer::sum);
+                    totalRepairMutationCounts.merge(key, 1, Integer::sum);
+                }
                 verificationResults.remove(key);
             }
             verificationRequired = true;
@@ -88,6 +105,9 @@ public final class AgentProgress {
             if (path != null) {
                 successfullyReadPaths.add(path);
                 lastSuccessfulReadStep = stepIndex;
+                String key = pathKey(path);
+                lastSuccessfulReadSteps.put(key, stepIndex);
+                lastSuccessfulReadIdentities.put(key, "step:" + stepIndex + ":hash:" + result.output().hashCode());
                 pathsRequiringFreshRead.remove(pathKey(path));
                 if (verificationRequired
                         && stepIndex > lastPatchStep
@@ -245,20 +265,82 @@ public final class AgentProgress {
     }
 
     public void observeVerification(VerificationResult result) {
+        observeVerification(result, "unknown", "unknown", VerificationCapability.unknown(),
+                DiagnosticLocation.unknown(), 0);
+    }
+
+    public VerificationFailureContext observeVerification(
+            VerificationResult result, String mutationTool, String rereadIdentity,
+            VerificationCapability capability, DiagnosticLocation location, int failureStep
+    ) {
         if (result == null || result.file() == null) {
-            return;
+            return null;
         }
         String key = pathKey(result.file().toString());
         long currentSequence = mutationSequences.getOrDefault(key, 0L);
         if (currentSequence != 0 && currentSequence == result.mutationSequence()) {
             verificationResults.put(key, result);
+            if (result.status() == VerificationStatus.FAIL) {
+                int count = verificationFailureCounts.merge(key, 1, Integer::sum);
+                VerificationFailureContext context = new VerificationFailureContext(
+                        result.file().toString(), result.verifierId(), result.status(),
+                        result.diagnosticSummary(), location == null ? DiagnosticLocation.unknown() : location,
+                        result.mutationSequence(),
+                        lastMutationTools.getOrDefault(key, mutationTool),
+                        lastSuccessfulReadIdentities.getOrDefault(key, rereadIdentity), capability, count,
+                        failureStep);
+                verificationFailures.put(key, context);
+                repairMutationCounts.put(key, 0);
+                return context;
+            }
+            if (result.status() == VerificationStatus.PASS) {
+                VerificationFailureContext failed = verificationFailures.get(key);
+                if (failed != null && repairMutationCounts.getOrDefault(key, 0) > 0) {
+                    successfulRecoveryCounts.merge(key, 1, Integer::sum);
+                }
+                verificationFailures.remove(key);
+                repairMutationCounts.remove(key);
+            } else if (result.status() == VerificationStatus.UNAVAILABLE
+                    || result.status() == VerificationStatus.NOT_APPLICABLE) {
+                verificationFailures.remove(key);
+                repairMutationCounts.remove(key);
+            }
         }
+        return null;
+    }
+
+    public boolean requiresRepairRead(String path) {
+        if (path == null) return false;
+        VerificationFailureContext failure = verificationFailures.get(pathKey(path));
+        return failure != null && lastSuccessfulReadSteps.getOrDefault(pathKey(path), 0) <= failure.failureStep();
+    }
+
+    public VerificationFailureContext verificationFailure(String path) {
+        return path == null ? null : verificationFailures.get(pathKey(path));
+    }
+
+    public int verificationFailureCount(String path) {
+        return path == null ? 0 : verificationFailureCounts.getOrDefault(pathKey(path), 0);
+    }
+    public int repairMutationCount(String path) {
+        return path == null ? 0 : totalRepairMutationCounts.getOrDefault(pathKey(path), 0);
+    }
+    public int successfulRecoveryCount(String path) {
+        return path == null ? 0 : successfulRecoveryCounts.getOrDefault(pathKey(path), 0);
     }
 
     public boolean hasCurrentVerificationFailure() {
         return verificationResults.entrySet().stream().anyMatch(entry ->
                 mutationSequences.getOrDefault(entry.getKey(), 0L) == entry.getValue().mutationSequence()
                         && entry.getValue().status() == VerificationStatus.FAIL);
+    }
+
+    public String currentVerificationFailureKey() {
+        return currentVerificationResults().stream()
+                .filter(result -> result.status() == VerificationStatus.FAIL)
+                .map(result -> pathKey(result.file().toString()) + "#" + result.mutationSequence())
+                .sorted().collect(java.util.stream.Collectors.joining("|"))
+                + "|recoveries=" + successfulRecoveryCounts.values().stream().mapToInt(Integer::intValue).sum();
     }
 
     public List<VerificationResult> currentUnavailableVerifications() {

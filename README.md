@@ -205,6 +205,10 @@ Supported baseline values include `react`, `react_action_oriented`, `react_diagn
 - This is a research/educational coding-agent runtime, not a production IDE replacement
 - No Multi-Agent system or Agentic RL in the current runtime
 
+## Verification-guided Repair
+
+Verifier `FAIL` creates a structured repair context from the affected file and bounded diagnostic. The runtime requires a successful reread of that file before another repair mutation, and counts recovery only when a later verification passes. `UNAVAILABLE` does not trigger code repair. This feature is experimental and has not yet been live-benchmarked.
+
 ## Roadmap
 
 V2 exploration: Agentic RL with verifiable coding rewards.
