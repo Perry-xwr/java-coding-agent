@@ -11,7 +11,7 @@ import java.util.Set;
 
 public record EditReliabilityMetrics(String taskId, String language, EditReliabilityTaskCategory taskCategory,
                                      EditReliabilityMode mode, boolean taskSuccess, boolean workspaceOutcome,
-                                     boolean conversationalCompletion, boolean finalSyntaxValid,
+                                     boolean conversationalCompletion, VerificationStatus finalSyntaxStatus,
                                      boolean falseSuccess, boolean syntaxFalseSuccess, int providerRequests,
                                      int toolSteps, int reads, int mutations, int verificationAttempts,
                                      int verificationPasses, int verificationFailures, int verificationUnavailable,
@@ -67,9 +67,13 @@ public record EditReliabilityMetrics(String taskId, String language, EditReliabi
         }
         return new EditReliabilityMetrics(task.id(), task.language(), task.category(), mode,
                 evaluation.taskSuccess(), evaluation.workspaceOutcome(), evaluation.conversationalCompletion(),
-                evaluation.finalSyntaxValid(), evaluation.falseSuccess(), evaluation.syntaxFalseSuccess(),
+                evaluation.finalSyntaxStatus(), evaluation.falseSuccess(), evaluation.syntaxFalseSuccess(),
                 providerRequests, tools, reads, mutations, attempts, passes, failures, unavailable, notApplicable,
                 repairAttempts, recovered && failures > 0, drift, typed, repeated,
                 trajectory.terminationReason().name().equals("MAX_STEPS"), evaluation.infrastructureError());
+    }
+
+    public boolean finalSyntaxValid() {
+        return finalSyntaxStatus == VerificationStatus.PASS;
     }
 }

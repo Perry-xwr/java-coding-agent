@@ -66,6 +66,10 @@ Working memory is session-level, bounded, non-persistent, and grounded in user r
 
 A successful file mutation confirms only that text was written; it does not prove that the source is valid. In the local workspace environment, changed Python, JavaScript, C, C++, and standalone Java files are checked with the corresponding local syntax/compiler command when available. Java files in Maven workspaces continue to use the existing project-level `run_maven_test` path. A verifier failure is returned to the Agent as bounded diagnostics for a limited repair attempt; `UNAVAILABLE` (for example, a missing compiler or timeout) is distinct from `PASS` and does not count as verified. These checks cover syntax/compilation or project tests, not semantic correctness. There is no transactional rollback yet, so a failed final verification may leave the last edited file state in the workspace.
 
+### V1.8 Edit Reliability Evaluation
+
+Attempt 1 stopped before provider startup due to a fixture-root error. Attempt 2 is invalid: Python verifier infrastructure failures were misclassified as source failures, and the frozen stop rule did not observe verifier-level infrastructure errors. The benchmark verifier and stop-rule implementation has since been corrected; no mode-effect conclusion is drawn from either attempt. See the [V1.8 edit-reliability protocol and history](benchmark/edit-reliability-v1/README.md).
+
 ## Planning
 
 The CODE profile defaults to `REACTIVE`. Set `PLANNING_MODE=plan-execute` to opt into the

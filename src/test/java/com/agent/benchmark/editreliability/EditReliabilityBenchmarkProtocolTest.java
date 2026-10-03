@@ -75,9 +75,11 @@ class EditReliabilityBenchmarkProtocolTest {
         ScriptedClient fake = new ScriptedClient(read("source.py"), patch("source.py", "return 1", "return ("), done());
         var result = run(task, EditReliabilityMode.REREAD_ONLY, fake);
         assertTrue(result.evaluation().conversationalCompletion());
+        assertEquals(VerificationStatus.FAIL, result.evaluation().finalSyntaxStatus());
         assertFalse(result.evaluation().finalSyntaxValid());
         assertTrue(result.evaluation().falseSuccess());
         assertTrue(result.evaluation().syntaxFalseSuccess());
+        assertFalse(result.evaluation().infrastructureError());
         assertFalse(result.evaluation().taskSuccess());
         assertEquals(0, result.metrics().verificationFailures());
         assertEquals(0, result.metrics().verificationAttempts());
@@ -137,7 +139,8 @@ class EditReliabilityBenchmarkProtocolTest {
         assertTrue(result.agentResult().trajectory().completed());
         assertEquals(1, result.metrics().verificationUnavailable());
         assertTrue(result.evaluation().finalSyntaxValid());
-        assertFalse(result.evaluation().infrastructureError());
+        assertEquals(VerificationStatus.PASS, result.evaluation().finalSyntaxStatus());
+        assertTrue(result.evaluation().infrastructureError());
     }
 
     @Test
@@ -151,7 +154,60 @@ class EditReliabilityBenchmarkProtocolTest {
                 TerminationReason.FINAL_ANSWER, true, true, 0, 1);
         var evaluation = new EditReliabilityEvaluator().evaluate(task, workspace, trajectory);
         assertFalse(evaluation.finalSyntaxValid());
+        assertEquals(VerificationStatus.FAIL, evaluation.finalSyntaxStatus());
         assertTrue(evaluation.syntaxFalseSuccess());
+    }
+
+    @Test
+    void independentVerifierUnavailableIsInfrastructureNotSyntaxFalseSuccess() throws Exception {
+        EditReliabilityTask task = pythonTask("independent-unavailable", "def value():\n    return 1\n",
+                "return 1", "return 2", "return 2");
+        Path workspace = temporary.resolve("independent-unavailable-workspace");
+        Files.createDirectories(workspace);
+        Files.writeString(workspace.resolve("source.py"), "def value():\n    return 2\n");
+        var trajectory = completedMutationTrajectory("source.py");
+        CodeVerifier unavailable = new CodeVerifier() {
+            @Override public String id() { return "unavailable-evaluator"; }
+            @Override public boolean supports(Path file, Path root) { return file.toString().endsWith(".py"); }
+            @Override public VerificationResult verify(Path file, Path root, long sequence) {
+                return new VerificationResult(VerificationStatus.UNAVAILABLE, root.relativize(file), id(), "",
+                        "simulated unavailable", sequence);
+            }
+        };
+        var evaluation = new EditReliabilityEvaluator(new VerifierRegistry(List.of(unavailable)))
+                .evaluate(task, workspace, trajectory);
+
+        assertTrue(evaluation.conversationalCompletion());
+        assertEquals(VerificationStatus.UNAVAILABLE, evaluation.finalSyntaxStatus());
+        assertFalse(evaluation.taskSuccess());
+        assertFalse(evaluation.syntaxFalseSuccess());
+        assertFalse(evaluation.falseSuccess());
+        assertTrue(evaluation.infrastructureError());
+    }
+
+    @Test
+    void runnerStopsAfterThirdConditionLevelVerifierInfrastructureFailure() throws Exception {
+        EditReliabilityManifest benchmark = manifest();
+        java.util.concurrent.atomic.AtomicInteger executed = new java.util.concurrent.atomic.AtomicInteger();
+        EditReliabilityBenchmarkRunner runner = new EditReliabilityBenchmarkRunner((task, mode, provider,
+                fixtures, runs, runId, maven) -> {
+            executed.incrementAndGet();
+            var evaluation = new EditReliabilityEvaluator.Evaluation(task.id(), false, true, true,
+                    VerificationStatus.UNAVAILABLE, false, false, true,
+                    List.of("INDEPENDENT_VERIFIER_UNAVAILABLE:" + task.id()), List.of("python-py-compile"));
+            return new EditReliabilityRuntimeHarness.RunResult(task, mode, Path.of("workspace"), null,
+                    evaluation, null, 0, null);
+        });
+        LLMClient unusedProvider = messages -> { throw new AssertionError("provider should not be called"); };
+
+        var result = runner.runRound(benchmark, (task, mode) -> unusedProvider, temporary, temporary,
+                "stop-rule", temporary);
+
+        assertEquals(3, executed.get());
+        assertEquals(3, result.infrastructureFailureCount());
+        assertTrue(result.stoppedAtInfrastructureThreshold());
+        assertEquals(3, result.results().size());
+        assertEquals(3, result.infrastructureFailures().size());
     }
 
     @Test
@@ -217,6 +273,15 @@ class EditReliabilityBenchmarkProtocolTest {
     }
 
     private static LLMResponse read(String path) { return call("read_file", Map.of("path", path)); }
+
+    private static AgentTrajectory completedMutationTrajectory(String path) {
+        var mutation = new com.agent.agent.AgentStep(1, com.agent.agent.AgentActionType.TOOL_CALL,
+                "apply_patch", "patch-1", "{}", Map.of("path", path),
+                com.agent.tool.ToolResult.success("changed", Map.of("changed", true, "path", path)),
+                null, null, 0, 1);
+        return new AgentTrajectory("fake", "edit file", List.of(mutation), "done",
+                TerminationReason.FINAL_ANSWER, true, true, 0, 1);
+    }
     private static LLMResponse patch(String path, String oldText, String newText) {
         return call("apply_patch", Map.of("path", path, "oldText", oldText, "newText", newText));
     }
