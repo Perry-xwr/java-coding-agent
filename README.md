@@ -68,6 +68,11 @@ experimental `PLAN_EXECUTE` strategy: each task run performs an independent PLAN
 with at most one bounded REPLAN. The plan guides execution; it is not a verified workspace fact.
 This is optional experimental support, not multi-agent orchestration.
 
+Set `PLANNING_MODE=adaptive` to enable experimental zero-LLM planning routing: simple tasks stay
+reactive, while tasks with clear multi-step, multi-requirement, cross-file, or verification signals
+may use `PLAN_EXECUTE`. The deterministic heuristic runs before the first provider request and is
+not yet evaluated by an independent adaptive benchmark.
+
 ### Planning Ablation
 
 In two paired live rounds over the same eight `planning-v1` DEV tasks, `REACTIVE` scored 2/8 then

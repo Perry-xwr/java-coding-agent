@@ -136,6 +136,7 @@ class AgentPlanningTest {
         assertEquals(PlanningMode.REACTIVE, PlanningMode.fromValue(null));
         assertEquals(PlanningMode.REACTIVE, PlanningMode.fromValue(""));
         assertEquals(PlanningMode.PLAN_EXECUTE, PlanningMode.fromValue("plan-execute"));
+        assertEquals(PlanningMode.ADAPTIVE, PlanningMode.fromValue("adaptive"));
         org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
                 () -> PlanningMode.fromValue("planner"));
     }

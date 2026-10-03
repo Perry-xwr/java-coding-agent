@@ -6,7 +6,8 @@ import java.util.Map;
 /** Selects whether the coding Agent plans separately before its normal execution loop. */
 public enum PlanningMode {
     REACTIVE,
-    PLAN_EXECUTE;
+    PLAN_EXECUTE,
+    ADAPTIVE;
 
     public static PlanningMode fromEnvironment() {
         return fromValue(System.getenv("PLANNING_MODE"));
@@ -19,8 +20,9 @@ public enum PlanningMode {
         return switch (value.trim().toLowerCase(Locale.ROOT)) {
             case "reactive" -> REACTIVE;
             case "plan-execute" -> PLAN_EXECUTE;
+            case "adaptive" -> ADAPTIVE;
             default -> throw new IllegalArgumentException(
-                    "PLANNING_MODE must be 'reactive' or 'plan-execute'");
+                    "PLANNING_MODE must be 'reactive', 'plan-execute', or 'adaptive'");
         };
     }
 }
