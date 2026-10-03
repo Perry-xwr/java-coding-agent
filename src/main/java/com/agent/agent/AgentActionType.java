@@ -3,6 +3,9 @@ package com.agent.agent;
 public enum AgentActionType {
     PLAN_CREATED,
     PLAN_UPDATED,
+    PLAN_STEP_UPDATE,
+    REPLAN,
+    PLAN_FALLBACK,
     PLAN_COMPLETION_FEEDBACK,
     TOOL_CALL,
     AUTO_REREAD,

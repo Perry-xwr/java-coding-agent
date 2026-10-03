@@ -3,6 +3,7 @@ package com.agent;
 import com.agent.agent.Agent;
 import com.agent.agent.AgentEventListener;
 import com.agent.agent.TaskMode;
+import com.agent.agent.PlanningMode;
 import com.agent.environment.LocalWorkspaceEnvironment;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LlmClientFactory;
@@ -101,7 +102,7 @@ public final class CliAgentFactory {
 
     public static CliSessions createProfiles(Path workspace, AgentEventListener eventListener) {
         LLMClient client = LlmClientFactory.create();
-        return createProfiles(client, workspace, eventListener);
+        return createProfiles(client, workspace, eventListener, PlanningMode.fromEnvironment());
     }
 
     static CliSessions createProfiles(
@@ -109,11 +110,20 @@ public final class CliAgentFactory {
             Path workspace,
             AgentEventListener eventListener
     ) {
+        return createProfiles(client, workspace, eventListener, PlanningMode.REACTIVE);
+    }
+
+    static CliSessions createProfiles(
+            LLMClient client,
+            Path workspace,
+            AgentEventListener eventListener,
+            PlanningMode planningMode
+    ) {
         Objects.requireNonNull(client, "client must not be null");
         return new CliSessions(
                 createChat(client, workspace, eventListener),
                 createReadOnly(client, workspace, eventListener),
-                createCoding(client, workspace, eventListener)
+                createCoding(client, workspace, eventListener, planningMode)
         );
     }
 
@@ -164,7 +174,19 @@ public final class CliAgentFactory {
             AgentEventListener eventListener
     ) {
         Path normalizedWorkspace = normalize(workspace);
-        return createCoding(client,normalizedWorkspace,eventListener,normalizedWorkspace.resolve(".m2/repository"));
+        return createCoding(client, normalizedWorkspace, eventListener,
+                normalizedWorkspace.resolve(".m2/repository"), PlanningMode.REACTIVE);
+    }
+
+    public static Agent createCoding(
+            LLMClient client,
+            Path workspace,
+            AgentEventListener eventListener,
+            PlanningMode planningMode
+    ) {
+        Path normalizedWorkspace = normalize(workspace);
+        return createCoding(client, normalizedWorkspace, eventListener,
+                normalizedWorkspace.resolve(".m2/repository"), planningMode);
     }
 
     /** Creates the same CODE profile with an explicit Maven cache for isolated benchmark workspaces. */
@@ -173,6 +195,16 @@ public final class CliAgentFactory {
             Path workspace,
             AgentEventListener eventListener,
             Path localRepository
+    ) {
+        return createCoding(client, workspace, eventListener, localRepository, PlanningMode.REACTIVE);
+    }
+
+    public static Agent createCoding(
+            LLMClient client,
+            Path workspace,
+            AgentEventListener eventListener,
+            Path localRepository,
+            PlanningMode planningMode
     ) {
         Path normalizedWorkspace = normalize(workspace);
         ToolRegistry registry = ToolRegistry.withCliCodingTools(
@@ -187,9 +219,9 @@ public final class CliAgentFactory {
                 Agent.MAX_ITERATIONS,
                 TaskMode.CODE_MODIFICATION,
                 true,
-                false,
                 Objects.requireNonNull(eventListener, "eventListener must not be null"),
-                true
+                true,
+                Objects.requireNonNull(planningMode, "planningMode must not be null")
         );
     }
 

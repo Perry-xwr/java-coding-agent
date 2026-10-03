@@ -37,6 +37,8 @@ public class Agent {
     private final TaskMode taskMode;
     private final boolean diagnosticRecovery;
     private final boolean planningEnabled;
+    private final PlanningMode planningMode;
+    private final AgentPlanner planner = new AgentPlanner();
     private final AgentEventListener eventListener;
     private final boolean streamingEnabled;
     private final List<Message> history = new ArrayList<>();
@@ -138,6 +140,38 @@ public class Agent {
             AgentEventListener eventListener,
             boolean streamingEnabled
     ) {
+        this(llmClient, environment, systemPrompt, maxIterations, taskMode,
+                diagnosticRecovery, planningEnabled, eventListener, streamingEnabled,
+                PlanningMode.REACTIVE);
+    }
+
+    public Agent(
+            LLMClient llmClient,
+            AgentEnvironment environment,
+            String systemPrompt,
+            int maxIterations,
+            TaskMode taskMode,
+            boolean diagnosticRecovery,
+            AgentEventListener eventListener,
+            boolean streamingEnabled,
+            PlanningMode planningMode
+    ) {
+        this(llmClient, environment, systemPrompt, maxIterations, taskMode,
+                diagnosticRecovery, false, eventListener, streamingEnabled, planningMode);
+    }
+
+    private Agent(
+            LLMClient llmClient,
+            AgentEnvironment environment,
+            String systemPrompt,
+            int maxIterations,
+            TaskMode taskMode,
+            boolean diagnosticRecovery,
+            boolean planningEnabled,
+            AgentEventListener eventListener,
+            boolean streamingEnabled,
+            PlanningMode planningMode
+    ) {
         this.llmClient = Objects.requireNonNull(llmClient, "llmClient must not be null");
         this.environment = Objects.requireNonNull(environment, "environment must not be null");
         if (maxIterations < 1) {
@@ -147,6 +181,7 @@ public class Agent {
         this.taskMode = Objects.requireNonNull(taskMode, "taskMode must not be null");
         this.diagnosticRecovery = diagnosticRecovery;
         this.planningEnabled = planningEnabled;
+        this.planningMode = Objects.requireNonNull(planningMode, "planningMode must not be null");
         this.eventListener = Objects.requireNonNull(eventListener, "eventListener must not be null");
         this.streamingEnabled = streamingEnabled;
         this.systemMessage = Message.system(
@@ -207,6 +242,28 @@ public class Agent {
 
         history.add(Message.user(task));
 
+        boolean planExecute = planningMode == PlanningMode.PLAN_EXECUTE
+                && taskMode == TaskMode.CODE_MODIFICATION;
+        boolean planningFallback = false;
+        int replanCount = 0;
+        if (planExecute) {
+            try {
+                AgentPlan plan = planner.create(llmClient, task);
+                progress.updatePlan(plan);
+                steps.add(planStep(steps.size() + 1, AgentActionType.PLAN_CREATED, plan));
+                TaskRequirement started = progress.startNextPlanStep();
+                if (started != null) {
+                    steps.add(planStatusStep(steps.size() + 1, started, "STEP_STARTED", null));
+                }
+            } catch (IOException | IllegalArgumentException exception) {
+                planningFallback = true;
+                steps.add(planningFallbackStep(steps.size() + 1, "INITIAL_PLAN_FAILED",
+                        exception.getClass().getSimpleName()));
+                history.add(Message.system("PLAN_FALLBACK: planning was unavailable; continue with the "
+                        + "existing reactive execution behavior."));
+            }
+        }
+
         for (int iteration = 0; iteration < maxIterations; iteration++) {
             if (diagnosticRecovery
                     && taskMode == TaskMode.CODE_MODIFICATION
@@ -234,8 +291,9 @@ public class Agent {
             long llmStartedNanos = System.nanoTime();
             LLMResponse response;
             try {
-                response = completeDecision(decisionMessages(progress));
+                response = completeDecision(decisionMessages(progress, planExecute));
             } catch (IOException exception) {
+                appendPlanOutcome(steps, planExecute, planningFallback, progress.plan());
                 steps.add(new AgentStep(
                         steps.size() + 1,
                         AgentActionType.ERROR,
@@ -296,7 +354,7 @@ public class Agent {
                                 + "and no current file read confirmed that a change was unnecessary.";
                         return failedCompletion(
                                 runId, task, steps, content, "MUTATION_FAILURE_FINAL", failure,
-                                runStartedAt, runStartedNanos, progress.plan()
+                                runStartedAt, runStartedNanos, progress.plan(), planExecute, planningFallback
                         );
                     } else if (progress.verificationRequired()
                             && !progress.postMutationReadSeen()
@@ -311,7 +369,7 @@ public class Agent {
                                 + "failed because the changed file was not reread.";
                         return failedCompletion(
                                 runId, task, steps, content, "POST_MUTATION_READ_FAILURE", failure,
-                                runStartedAt, runStartedNanos, progress.plan()
+                                runStartedAt, runStartedNanos, progress.plan(), planExecute, planningFallback
                         );
                     } else if (progress.postMutationTestSeen()
                             && Boolean.FALSE.equals(progress.postMutationTestPassed())
@@ -339,7 +397,7 @@ public class Agent {
                                 + "failed because the latest Maven test did not pass.";
                         return failedCompletion(
                                 runId, task, steps, content, "TEST_VERIFICATION_FAILURE", failure,
-                                runStartedAt, runStartedNanos, progress.plan()
+                                runStartedAt, runStartedNanos, progress.plan(), planExecute, planningFallback
                         );
                     } else if (progress.lastMutationIsJavaSource()
                             && mavenVerificationAvailable
@@ -358,7 +416,7 @@ public class Agent {
                                 + "successful Maven test verified the latest mutation.";
                         return failedCompletion(
                                 runId, task, steps, content, "JAVA_VERIFICATION_FAILURE", failure,
-                                runStartedAt, runStartedNanos, progress.plan()
+                                runStartedAt, runStartedNanos, progress.plan(), planExecute, planningFallback
                         );
                     } else if (planningEnabled
                             && (progress.plan() == null
@@ -376,6 +434,7 @@ public class Agent {
                     history.add(Message.system(feedback));
                     continue;
                 }
+                appendPlanOutcome(steps, planExecute, planningFallback, progress.plan());
                 steps.add(new AgentStep(
                         steps.size() + 1,
                         AgentActionType.FINAL_ANSWER,
@@ -402,6 +461,8 @@ public class Agent {
                 );
             }
 
+            ToolCall replanTriggerCall = null;
+            ToolResult replanTriggerResult = null;
             for (ToolCall toolCall : toolCalls) {
                 long toolStartedAt = System.currentTimeMillis();
                 long toolStartedNanos = System.nanoTime();
@@ -445,6 +506,33 @@ public class Agent {
                 );
                 history.add(Message.tool(toolCall.id(), serializeObservation(toolResult)));
 
+                if (planExecute) {
+                    if (toolResult.success()) {
+                        TaskRequirement completed = progress.completeCurrentPlanStep(toolCall.name(),
+                                "Action evidence only: " + toolCall.name() + " returned success; "
+                                        + "semantic correctness still requires task-appropriate verification.");
+                        if (completed != null) {
+                            steps.add(planStatusStep(steps.size() + 1, completed,
+                                    "ACTION_SUCCEEDED", toolCall.name()));
+                            TaskRequirement next = progress.startNextPlanStep();
+                            if (next != null) {
+                                steps.add(planStatusStep(steps.size() + 1, next, "STEP_STARTED", null));
+                            }
+                        }
+                    } else if (isReplanTrigger(toolResult.errorCode())) {
+                        TaskRequirement blocked = progress.blockCurrentPlanStep(
+                                "Observed tool failure: " + toolResult.errorCode());
+                        if (blocked != null) {
+                            steps.add(planStatusStep(steps.size() + 1, blocked,
+                                    "STEP_BLOCKED", toolResult.errorCode().name()));
+                        }
+                        if (replanTriggerCall == null) {
+                            replanTriggerCall = toolCall;
+                            replanTriggerResult = toolResult;
+                        }
+                    }
+                }
+
                 if (isSuccessfulAutoRereadMutation(toolCall.name(), toolResult)) {
                     Map<String, Object> rereadArguments = Map.of("path", toolPath);
                     String rereadJson = serializeArguments(rereadArguments);
@@ -476,6 +564,17 @@ public class Agent {
                                 + "use read_file to obtain current contents before continuing.";
                         steps.add(runtimeFeedbackStep(steps.size() + 1, null, feedback));
                         history.add(Message.system(feedback));
+                    } else if (planExecute) {
+                        TaskRequirement completed = progress.completeCurrentPlanStep("read_file",
+                                "Action evidence only: runtime reread succeeded for " + toolPath + ".");
+                        if (completed != null) {
+                            steps.add(planStatusStep(steps.size() + 1, completed,
+                                    "REREAD_SUCCEEDED", "AUTO_REREAD"));
+                            TaskRequirement next = progress.startNextPlanStep();
+                            if (next != null) {
+                                steps.add(planStatusStep(steps.size() + 1, next, "STEP_STARTED", null));
+                            }
+                        }
                     }
                 }
 
@@ -546,9 +645,37 @@ public class Agent {
                     break;
                 }
             }
+            if (planExecute && progress.plan() != null
+                    && replanTriggerCall != null && replanCount < 1) {
+                replanCount++;
+                try {
+                    AgentPlan replanned = planner.replan(llmClient, task, progress.plan(),
+                            replanTriggerResult, replanTriggerCall.name());
+                    progress.updatePlan(replanned);
+                    steps.add(planStep(steps.size() + 1, AgentActionType.REPLAN, replanned));
+                    TaskRequirement next = progress.startNextPlanStep();
+                    if (next != null) {
+                        steps.add(planStatusStep(steps.size() + 1, next, "STEP_STARTED", "REPLAN"));
+                    }
+                    history.add(Message.system("REPLAN: The plan was updated once using the observed "
+                            + "typed tool failure. Continue through the existing tools and guards."));
+                } catch (IOException | IllegalArgumentException exception) {
+                    planningFallback = true;
+                    progress.resetBlockedPlanStep();
+                    TaskRequirement resumed = progress.startNextPlanStep();
+                    if (resumed != null) {
+                        steps.add(planStatusStep(steps.size() + 1, resumed, "STEP_RESUMED", "REPLAN_FAILED"));
+                    }
+                    steps.add(planningFallbackStep(steps.size() + 1, "REPLAN_FAILED",
+                            exception.getClass().getSimpleName()));
+                    history.add(Message.system("PLAN_FALLBACK: replan unavailable; continue with the "
+                            + "current plan and existing reactive recovery behavior."));
+                }
+            }
         }
 
         String error = "Agent exceeded maximum iterations: " + maxIterations;
+        appendPlanOutcome(steps, planExecute, planningFallback, progress.plan());
         steps.add(new AgentStep(
                 steps.size() + 1,
                 AgentActionType.ERROR,
@@ -609,6 +736,10 @@ public class Agent {
         return List.copyOf(history);
     }
 
+    public PlanningMode planningMode() {
+        return planningMode;
+    }
+
     public void clearHistory() {
         history.clear();
         history.add(systemMessage);
@@ -640,7 +771,12 @@ public class Agent {
         return new AgentRunResult(finalAnswer, trajectory);
     }
 
-    private List<Message> decisionMessages(AgentProgress progress) {
+    private List<Message> decisionMessages(AgentProgress progress, boolean planExecute) {
+        if (planExecute && progress.plan() != null) {
+            List<Message> messages = new ArrayList<>(history);
+            messages.add(Message.system(progress.compactExecutionPlanContext()));
+            return List.copyOf(messages);
+        }
         if (!planningEnabled || taskMode != TaskMode.CODE_MODIFICATION) {
             return List.copyOf(history);
         }
@@ -658,6 +794,56 @@ public class Agent {
                 stepIndex, type, null, null, null, arguments, null,
                 null, null, System.currentTimeMillis(), 0
         );
+    }
+
+    private static AgentStep planStatusStep(
+            int stepIndex, TaskRequirement requirement, String event, String detail
+    ) {
+        Map<String, Object> arguments = new java.util.LinkedHashMap<>();
+        arguments.put("stepId", requirement.id());
+        arguments.put("description", requirement.description());
+        arguments.put("status", requirement.status().name());
+        arguments.put("event", event);
+        if (detail != null) {
+            arguments.put("detail", detail);
+        }
+        if (!requirement.evidence().isBlank()) {
+            arguments.put("evidence", requirement.evidence());
+        }
+        return new AgentStep(stepIndex, AgentActionType.PLAN_STEP_UPDATE, null, null, null,
+                arguments, null, null, null, System.currentTimeMillis(), 0);
+    }
+
+    private static AgentStep planningFallbackStep(int stepIndex, String reason, String failureType) {
+        return new AgentStep(stepIndex, AgentActionType.PLAN_FALLBACK, null, null, null,
+                Map.of("reason", reason, "failureType", failureType,
+                        "outcome", "FALLBACK_REACTIVE"), null, null, null,
+                System.currentTimeMillis(), 0);
+    }
+
+    private static void appendPlanOutcome(
+            List<AgentStep> steps, boolean planExecute, boolean fallback, AgentPlan plan
+    ) {
+        if (!planExecute) {
+            return;
+        }
+        String outcome = fallback ? "FALLBACK_REACTIVE"
+                : plan != null && plan.remainingRequirementCount() == 0
+                ? "COMPLETED" : "PARTIALLY_COMPLETED";
+        steps.add(new AgentStep(steps.size() + 1, AgentActionType.PLAN_STEP_UPDATE,
+                null, null, null, Map.of("event", "PLAN_OUTCOME", "outcome", outcome),
+                null, null, null, System.currentTimeMillis(), 0));
+    }
+
+    private static boolean isReplanTrigger(ToolErrorCode errorCode) {
+        return errorCode == ToolErrorCode.FILE_NOT_FOUND
+                || errorCode == ToolErrorCode.TEXT_NOT_FOUND
+                || errorCode == ToolErrorCode.TOOL_NOT_FOUND
+                || errorCode == ToolErrorCode.TEST_FAILED
+                || errorCode == ToolErrorCode.STALE_EDIT_CONTEXT
+                || errorCode == ToolErrorCode.MULTIPLE_MATCHES
+                || errorCode == ToolErrorCode.AMBIGUOUS_MATCH
+                || errorCode == ToolErrorCode.INVALID_LINE_RANGE;
     }
 
     private static AgentStep planCompletionFeedbackStep(
@@ -715,13 +901,16 @@ public class Agent {
             String failure,
             long runStartedAt,
             long runStartedNanos,
-            AgentPlan plan
+            AgentPlan plan,
+            boolean planExecute,
+            boolean planningFallback
     ) {
         steps.add(runtimeFeedbackStep(
                 steps.size() + 1,
                 attemptedFinalAnswer,
                 feedbackCode + ": " + failure
         ));
+        appendPlanOutcome(steps, planExecute, planningFallback, plan);
         steps.add(new AgentStep(
                 steps.size() + 1,
                 AgentActionType.FINAL_ANSWER,
