@@ -61,6 +61,21 @@ Working memory is session-level, bounded, non-persistent, and grounded in user r
 | `run_maven_test` | Run controlled Maven validation with optional test selection |
 | `replace_lines` | Experimental guarded line-based editing; not part of the V1 default strategy |
 
+## Planning
+
+The CODE profile defaults to `REACTIVE`. Set `PLANNING_MODE=plan-execute` to opt into the
+experimental `PLAN_EXECUTE` strategy: each task run performs an independent PLAN → EXECUTE flow
+with at most one bounded REPLAN. The plan guides execution; it is not a verified workspace fact.
+This is optional experimental support, not multi-agent orchestration.
+
+### Planning Ablation
+
+In two paired live rounds over the same eight `planning-v1` DEV tasks, `REACTIVE` scored 2/8 then
+5/8, and `PLAN_EXECUTE` scored 3/8 then 2/8. Across the same eight tasks repeated twice (16 task-runs
+per mode, not independent tasks), the descriptive totals were 7/16 with 94 requests for REACTIVE
+and 5/16 with 119 requests for PLAN_EXECUTE. No repeatable success advantage was observed; this is
+a small, stochastic DEV experiment, not a statistical result. See [planning-v1 results](benchmark/planning-v1/README.md).
+
 ## Safety Model
 
 V1 accepts workspace-relative paths only and rejects traversal, absolute paths, and Java NIO-detectable symlink escapes. It exposes no unrestricted write/delete operation and no arbitrary shell. Maven execution uses an allowlisted goal, a fixed working directory, validated test selectors, a timeout, and bounded output capture. Text replacement uses temporary files and atomic replacement when supported.

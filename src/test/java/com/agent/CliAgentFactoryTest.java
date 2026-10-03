@@ -2,6 +2,7 @@ package com.agent;
 
 import com.agent.agent.Agent;
 import com.agent.agent.AgentEventListener;
+import com.agent.agent.PlanningMode;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
@@ -58,8 +59,25 @@ class CliAgentFactoryTest {
                 client.toolNames().get(0)
         );
         assertEquals(2, client.requests().size());
+        assertFalse(client.requests().get(0).stream()
+                .anyMatch(message -> message.content().contains("[PLANNING_PHASE]")));
         assertTrue(client.requests().get(1).stream()
                 .anyMatch(message -> message.content().contains("PREMATURE_FINAL_GUARD")));
+    }
+
+    @Test
+    void injectedProfilesRemainReactiveUnlessPlanningIsExplicitlySelected() {
+        RecordingClient reactiveClient = new RecordingClient();
+        CliSessions reactive = CliAgentFactory.createProfiles(
+                reactiveClient, workspace, AgentEventListener.NO_OP);
+        assertEquals(PlanningMode.REACTIVE, reactive.code().planningMode());
+
+        RecordingClient planningClient = new RecordingClient();
+        CliSessions planExecute = CliAgentFactory.createProfiles(
+                planningClient, workspace, AgentEventListener.NO_OP, PlanningMode.PLAN_EXECUTE);
+        assertEquals(PlanningMode.PLAN_EXECUTE, planExecute.code().planningMode());
+        assertEquals(PlanningMode.REACTIVE, planExecute.chat().planningMode());
+        assertEquals(PlanningMode.REACTIVE, planExecute.read().planningMode());
     }
 
     @Test
