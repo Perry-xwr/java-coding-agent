@@ -68,7 +68,7 @@ A successful file mutation confirms only that text was written; it does not prov
 
 ### V1.8 Edit Reliability Evaluation
 
-Attempt 1 stopped before provider startup due to a fixture-root error. Attempt 2 is invalid: Python verifier infrastructure failures were misclassified as source failures, and the frozen stop rule did not observe verifier-level infrastructure errors. The benchmark verifier and stop-rule implementation has since been corrected; no mode-effect conclusion is drawn from either attempt. See the [V1.8 edit-reliability protocol and history](benchmark/edit-reliability-v1/README.md).
+Attempts 1 and 2 are invalid infrastructure attempts and are retained separately. Attempt 3 completed both paired rounds after the verifier and stop-rule fixes, repeating the same 12 DEV tasks twice (not 24 independent tasks). Syntax false-success was observed in 7/24 `REREAD_ONLY` runs and 0/24 `POST_EDIT_VERIFY` runs, while final syntax FAIL occurred in 7 and 8 runs respectively. Both modes had 1/24 task success. Verification reported 10 FAIL events across 8 runs; 2 later repair mutations were attempted, but no condition recovered to PASS. These descriptive results do not establish general superiority or statistical significance. See the [V1.8 edit-reliability protocol and history](benchmark/edit-reliability-v1/README.md).
 
 ## Planning
 
