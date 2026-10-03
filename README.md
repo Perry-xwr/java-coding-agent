@@ -133,13 +133,16 @@ The `adaptive-planning-v1` protocol compares REACTIVE, PLAN_EXECUTE, and a zero-
 
 ## Quick Start
 
-Requirements: Java 17, Maven 3.9+, and a GLM API key by default. The default GLM backend continues to use the configured HTTP proxy at `127.0.0.1:7897`.
+Requirements: Java 17, Maven 3.9+, and a GLM API key by default. Model requests connect directly unless an HTTP proxy is explicitly configured with `MODEL_PROXY`.
 
 ```powershell
 $env:GLM_API_KEY="YOUR_KEY"
+# Optional, for example: $env:MODEL_PROXY="http://127.0.0.1:7897"
 mvn test
 mvn exec:java '-Dexec.mainClass=com.agent.Main'
 ```
+
+`MODEL_PROXY` is an optional HTTP proxy URL (`http://host:port`). It applies to both GLM and OpenAI-compatible providers. Without it, both clients use a direct connection. Invalid proxy URLs fail during configuration validation; API keys are never included in configuration diagnostics.
 
 The CLI starts in `AUTO` mode and deterministically routes clear workspace reads to `READ`, explicit workspace changes to `CODE`, and general questions to `CHAT`. Use `/chat`, `/read`, `/code`, or `/auto` to override the active mode. Output is streamed as it arrives. In `CODE`, successful writes must be reread before completion, and Java changes require a successful Maven test when the tool is available. Enter `clear` in `AUTO` mode to reset all profile histories and the short-lived workspace reference context. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
 
