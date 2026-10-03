@@ -40,6 +40,7 @@ Working memory is session-level, bounded, non-persistent, and grounded in user r
 - Repository inspection and discovery, safe new-file creation, exact anchored editing, and controlled Maven testing
 - Compiler/test diagnostic parsing and bounded recovery behavior
 - Post-edit evidence gates: reread changed files and require Maven evidence for Java changes
+- Generic post-edit syntax/compile verification for common source files when local tools are available
 - Typed `ToolResult` observations and error codes
 - Bounded structured session working memory for active tasks, explicit targets, discovered files, verified tool facts, recent typed failures, and the last mutation
 - Structured Agent trajectories for reproducible analysis
@@ -60,6 +61,14 @@ Working memory is session-level, bounded, non-persistent, and grounded in user r
 | `create_file` | Create one new UTF-8 text file without overwriting an existing path |
 | `run_maven_test` | Run controlled Maven validation with optional test selection |
 | `replace_lines` | Experimental guarded line-based editing; not part of the V1 default strategy |
+
+## Generic Post-edit Verification
+
+A successful file mutation confirms only that text was written; it does not prove that the source is valid. In the local workspace environment, changed Python, JavaScript, C, C++, and standalone Java files are checked with the corresponding local syntax/compiler command when available. Java files in Maven workspaces continue to use the existing project-level `run_maven_test` path. A verifier failure is returned to the Agent as bounded diagnostics for a limited repair attempt; `UNAVAILABLE` (for example, a missing compiler or timeout) is distinct from `PASS` and does not count as verified. These checks cover syntax/compilation or project tests, not semantic correctness. There is no transactional rollback yet, so a failed final verification may leave the last edited file state in the workspace.
+
+### V1.8 Edit Reliability Evaluation
+
+Attempts 1 and 2 are invalid infrastructure attempts and are retained separately. Attempt 3 completed both paired rounds after the verifier and stop-rule fixes, repeating the same 12 DEV tasks twice (not 24 independent tasks). Syntax false-success was observed in 7/24 `REREAD_ONLY` runs and 0/24 `POST_EDIT_VERIFY` runs, while final syntax FAIL occurred in 7 and 8 runs respectively. Both modes had 1/24 task success. Verification reported 10 FAIL events across 8 runs; 2 later repair mutations were attempted, but no condition recovered to PASS. These descriptive results do not establish general superiority or statistical significance. See the [V1.8 edit-reliability protocol and history](benchmark/edit-reliability-v1/README.md).
 
 ## Planning
 
@@ -187,6 +196,8 @@ Supported baseline values include `react`, `react_action_oriented`, `react_diagn
 - Tool selection still depends on the LLM after routing
 - Structurally sensitive edits may still select a suboptimal insertion tool or anchor; the runtime has no AST parser
 - Verification for non-Java projects is limited compared with the Maven-based Java verification path
+- Post-edit verification is bounded syntax/compile checking, not semantic correctness; unsupported or unavailable verifiers are reported separately and are never treated as PASS
+- A failed verification feeds diagnostics back for bounded repair, but there is no transactional rollback if the final workspace state remains invalid
 - Working memory is session-only and is not persisted across CLI restarts
 - There is no persistent or semantic long-term memory and no RAG subsystem
 - Benchmark sets are small; reported results are descriptive rather than statistically significant

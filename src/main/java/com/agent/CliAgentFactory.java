@@ -5,6 +5,7 @@ import com.agent.agent.AgentEventListener;
 import com.agent.agent.TaskMode;
 import com.agent.agent.PlanningMode;
 import com.agent.environment.LocalWorkspaceEnvironment;
+import com.agent.environment.AgentEnvironment;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LlmClientFactory;
 import com.agent.tool.ToolRegistry;
@@ -212,9 +213,20 @@ public final class CliAgentFactory {
                 new DefaultProcessRunner(),
                 Objects.requireNonNull(localRepository,"localRepository must not be null").toAbsolutePath().normalize()
         );
+        return createCoding(client, new LocalWorkspaceEnvironment(normalizedWorkspace, registry),
+                eventListener, planningMode);
+    }
+
+    /** Creates the production CODE profile with a caller-supplied environment (for isolated harnesses). */
+    public static Agent createCoding(
+            LLMClient client,
+            AgentEnvironment environment,
+            AgentEventListener eventListener,
+            PlanningMode planningMode
+    ) {
         return new Agent(
                 Objects.requireNonNull(client, "client must not be null"),
-                new LocalWorkspaceEnvironment(normalizedWorkspace, registry),
+                Objects.requireNonNull(environment, "environment must not be null"),
                 V1_SYSTEM_PROMPT,
                 Agent.MAX_ITERATIONS,
                 TaskMode.CODE_MODIFICATION,

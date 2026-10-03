@@ -6,6 +6,7 @@ import com.agent.agent.AgentActionType;
 import com.agent.agent.AgentEventListener;
 import com.agent.agent.AgentRunResult;
 import com.agent.agent.TaskMode;
+import com.agent.environment.verification.VerificationStatus;
 import com.agent.benchmark.v12.V12Evaluator;
 import com.agent.benchmark.v12.V12RuntimeHarness;
 import com.agent.benchmark.v12.V12Split;
@@ -38,6 +39,24 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class AgentEnvironmentTest {
     @TempDir
     Path temporary;
+
+    @Test
+    void defaultEnvironmentDistinguishesUnsupportedSourceFromNonCodeFile() {
+        AgentEnvironment environment = new AgentEnvironment() {
+            @Override
+            public ToolResult execute(ToolCall call) {
+                return ToolResult.failure(ToolErrorCode.TOOL_NOT_FOUND, "not available");
+            }
+
+            @Override
+            public List<com.agent.llm.ToolDefinition> toolDefinitions() {
+                return List.of();
+            }
+        };
+
+        assertEquals(VerificationStatus.UNAVAILABLE, environment.verifyPostEdit("App.py", 1).status());
+        assertEquals(VerificationStatus.NOT_APPLICABLE, environment.verifyPostEdit("README.md", 2).status());
+    }
 
     @Test
     void exposesRegisteredDefinitionsAndBoundWorkspace() {

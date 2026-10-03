@@ -19,6 +19,17 @@ public final class DefaultProcessRunner implements ProcessRunner {
             Duration timeout,
             int maxOutputBytes
     ) throws IOException, InterruptedException {
+        return run(command, workingDirectory, timeout, maxOutputBytes, Map.of());
+    }
+
+    @Override
+    public ProcessExecutionResult run(
+            List<String> command,
+            Path workingDirectory,
+            Duration timeout,
+            int maxOutputBytes,
+            Map<String, String> environmentOverrides
+    ) throws IOException, InterruptedException {
         if (command == null || command.isEmpty()) {
             throw new IllegalArgumentException("command must not be empty");
         }
@@ -31,6 +42,9 @@ public final class DefaultProcessRunner implements ProcessRunner {
                 .directory(workingDirectory.toFile())
                 .redirectErrorStream(true);
         configureUtf8JavaOutput(processBuilder.environment());
+        if (environmentOverrides != null) {
+            processBuilder.environment().putAll(environmentOverrides);
+        }
         Process process = processBuilder.start();
         BoundedCapture capture = new BoundedCapture(maxOutputBytes);
         AtomicReference<IOException> readFailure = new AtomicReference<>();
