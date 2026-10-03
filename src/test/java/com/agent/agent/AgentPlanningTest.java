@@ -3,6 +3,8 @@ package com.agent.agent;
 import com.agent.benchmark.v12.BudgetedLlmClient;
 import com.agent.benchmark.v12.ProviderBudget;
 import com.agent.environment.AgentEnvironment;
+import com.agent.environment.verification.VerificationResult;
+import com.agent.environment.verification.VerificationStatus;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
@@ -179,6 +181,12 @@ class AgentPlanningTest {
             @Override
             public List<ToolDefinition> toolDefinitions() {
                 return definitions;
+            }
+
+            @Override
+            public VerificationResult verifyPostEdit(String relativePath, long mutationSequence) {
+                return new VerificationResult(VerificationStatus.NOT_APPLICABLE,
+                        Path.of(relativePath), "scripted-environment", "", "", mutationSequence);
             }
         };
     }

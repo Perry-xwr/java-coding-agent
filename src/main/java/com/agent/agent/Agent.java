@@ -7,6 +7,8 @@ import com.agent.llm.ToolCall;
 import com.agent.llm.ToolDefinition;
 import com.agent.llm.StreamingLlmClient;
 import com.agent.environment.AgentEnvironment;
+import com.agent.environment.verification.VerificationResult;
+import com.agent.environment.verification.VerificationStatus;
 import com.agent.tool.ToolResult;
 import com.agent.tool.ToolErrorCode;
 import com.agent.tool.ToolRegistry;
@@ -204,6 +206,19 @@ public class Agent {
             public List<ToolDefinition> toolDefinitions() {
                 return checked.definitions();
             }
+
+            @Override
+            public VerificationResult verifyPostEdit(String relativePath, long mutationSequence) {
+                java.nio.file.Path path;
+                try {
+                    path = relativePath == null || relativePath.isBlank()
+                            ? java.nio.file.Path.of(".") : java.nio.file.Path.of(relativePath).normalize();
+                } catch (RuntimeException exception) {
+                    path = java.nio.file.Path.of(".");
+                }
+                return new VerificationResult(VerificationStatus.NOT_APPLICABLE, path, "none", "",
+                        "The compatibility ToolRegistry adapter does not provide code verification", mutationSequence);
+            }
         };
     }
 
@@ -241,6 +256,8 @@ public class Agent {
         int searchChurnWarnings = 0;
         int budgetWarnings = 0;
         int planCompletionWarnings = 0;
+        int postEditVerificationFailureGuards = 0;
+        int unavailableVerificationWarnings = 0;
         int mutationGuardStep = 0;
         String previousFailedAction = null;
         int consecutiveIdenticalFailures = 0;
@@ -351,6 +368,11 @@ public class Agent {
             List<ToolCall> toolCalls = response.toolCalls();
             history.add(Message.assistant(rawContent, toolCalls));
             if (toolCalls.isEmpty()) {
+                if (taskMode == TaskMode.CODE_MODIFICATION
+                        && !progress.currentUnavailableVerifications().isEmpty()
+                        && claimsVerificationPassed(content)) {
+                    content = unavailableVerificationFinal(progress);
+                }
                 String feedback = null;
                 if (taskMode == TaskMode.CODE_MODIFICATION) {
                     if (!progress.hasSuccessfulMutation() && prematureFinalGuards < 1) {
@@ -384,6 +406,23 @@ public class Agent {
                                 runId, task, steps, content, "POST_MUTATION_READ_FAILURE", failure,
                                 runStartedAt, runStartedNanos, progress.plan(), planExecute, planningFallback
                         );
+                    } else if (progress.hasCurrentVerificationFailure()
+                            && postEditVerificationFailureGuards < 1) {
+                        postEditVerificationFailureGuards++;
+                        feedback = postEditVerificationFailureFeedback(progress);
+                    } else if (progress.hasCurrentVerificationFailure()) {
+                        String failure = postEditVerificationFailureFeedback(progress);
+                        return failedCompletion(
+                                runId, task, steps, content, "POST_EDIT_VERIFICATION_FAILURE", failure,
+                                runStartedAt, runStartedNanos, progress.plan(), planExecute, planningFallback
+                        );
+                    } else if (!progress.currentUnavailableVerifications().isEmpty()
+                            && unavailableVerificationWarnings < 1) {
+                        unavailableVerificationWarnings++;
+                        feedback = "POST_EDIT_VERIFICATION_UNAVAILABLE_GUARD: A code verifier was not "
+                                + "available for one or more changed files. You may finish, but must not "
+                                + "claim syntax, compilation, or verification passed; explicitly state the "
+                                + "unavailable verification in your final response.";
                     } else if (progress.postMutationTestSeen()
                             && Boolean.FALSE.equals(progress.postMutationTestPassed())
                             && isTestInfrastructureFailure(progress.postMutationTestErrorCode())
@@ -412,7 +451,7 @@ public class Agent {
                                 runId, task, steps, content, "TEST_VERIFICATION_FAILURE", failure,
                                 runStartedAt, runStartedNanos, progress.plan(), planExecute, planningFallback
                         );
-                    } else if (progress.lastMutationIsJavaSource()
+                    } else if (progress.latestJavaMutationRequiresMavenVerification()
                             && mavenVerificationAvailable
                             && !progress.postMutationTestSeen()
                             && !Boolean.TRUE.equals(progress.postMutationTestPassed())
@@ -421,7 +460,7 @@ public class Agent {
                         feedback = "JAVA_VERIFICATION_GUARD: A Java file was changed and reread, but no "
                                 + "successful Maven test has verified the latest mutation. Run Maven tests "
                                 + "before claiming that verification passed.";
-                    } else if (progress.lastMutationIsJavaSource()
+                    } else if (progress.latestJavaMutationRequiresMavenVerification()
                             && mavenVerificationAvailable
                             && !progress.postMutationTestSeen()
                             && !Boolean.TRUE.equals(progress.postMutationTestPassed())) {
@@ -589,6 +628,36 @@ public class Agent {
                             }
                         }
                     }
+                    if (rereadResult.success()) {
+                        VerificationResult verification = environment.verifyPostEdit(
+                                toolPath, progress.currentMutationSequence(toolPath));
+                        progress.observeVerification(verification);
+                        Map<String, Object> verificationMetadata = Map.of(
+                                "file", verification.file().toString(),
+                                "verifier", verification.verifierId(),
+                                "status", verification.status().name(),
+                                "mutationSequence", verification.mutationSequence()
+                        );
+                        String diagnostic = verification.status() == VerificationStatus.FAIL
+                                ? verification.diagnosticSummary()
+                                : verification.status() == VerificationStatus.UNAVAILABLE
+                                ? verification.unavailableReason() : "";
+                        steps.add(new AgentStep(
+                                steps.size() + 1,
+                                AgentActionType.POST_EDIT_VERIFICATION,
+                                "post_edit_verification",
+                                null,
+                                null,
+                                verificationMetadata,
+                                null,
+                                null,
+                                diagnostic,
+                                System.currentTimeMillis(),
+                                0
+                        ));
+                        String observation = verificationObservation(verification);
+                        history.add(Message.system(observation));
+                    }
                 }
 
                 if (diagnosticRecovery
@@ -596,9 +665,12 @@ public class Agent {
                         && progress.consumeConvergenceGuidanceAfterReread()) {
                     String feedback = "POST_EDIT_CONVERGENCE: The latest successful mutation has been reread. "
                             + "If the requested change is present, finish the task now instead of making "
-                            + "unrequested cleanup or cosmetic edits. If the changed file is Java, run the "
-                            + "required Maven verification before finalizing. Continue editing only when the "
-                            + "reread or verification shows that the requested change is incorrect or incomplete.";
+                            + "unrequested cleanup or cosmetic edits."
+                            + (progress.latestJavaMutationRequiresMavenVerification()
+                            ? " This Java mutation is in a Maven workspace; run the required Maven verification."
+                            : " Use the applicable post-edit verifier result; do not run Maven when it is not applicable.")
+                            + " Continue editing only when the reread or verification shows that the requested "
+                            + "change is incorrect or incomplete.";
                     steps.add(runtimeFeedbackStep(steps.size() + 1, null, feedback));
                     history.add(Message.system(feedback));
                 }
@@ -1002,6 +1074,56 @@ public class Agent {
         }
     }
 
+    private static String verificationObservation(VerificationResult result) {
+        StringBuilder observation = new StringBuilder("POST_EDIT_VERIFICATION: status=")
+                .append(result.status()).append(" file=").append(result.file())
+                .append(" verifier=").append(result.verifierId())
+                .append(" mutationSequence=").append(result.mutationSequence());
+        if (!result.diagnosticSummary().isBlank()) {
+            observation.append("\ndiagnostic:\n").append(result.diagnosticSummary());
+        }
+        if (!result.unavailableReason().isBlank()) {
+            observation.append("\nunavailableReason: ").append(result.unavailableReason());
+        }
+        if (result.status() == VerificationStatus.FAIL) {
+            observation.append("\nDo not claim successful completion. Inspect this diagnostic and make a bounded repair.");
+        } else if (result.status() == VerificationStatus.UNAVAILABLE) {
+            observation.append("\nThis is not a PASS. Do not claim that verification passed.");
+        } else if (result.status() == VerificationStatus.PASS) {
+            observation.append("\nThis verifies syntax/compilation only, not semantic correctness.");
+        }
+        return observation.toString();
+    }
+
+    private static String postEditVerificationFailureFeedback(AgentProgress progress) {
+        String failures = progress.currentVerificationResults().stream()
+                .filter(result -> result.status() == VerificationStatus.FAIL)
+                .map(result -> result.file() + " (" + result.verifierId() + "): "
+                        + result.diagnosticSummary())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        return "POST_EDIT_VERIFICATION_FAILED: Latest verification failed for one or more mutated files. "
+                + "Do not claim success. Use the diagnostics to reread and repair the affected file(s), "
+                + "then allow verification to run again.\n" + failures;
+    }
+
+    private static boolean claimsVerificationPassed(String content) {
+        if (content == null) {
+            return false;
+        }
+        String lower = content.toLowerCase(java.util.Locale.ROOT);
+        return lower.matches("(?s).*(tests? passed|all tests pass|build succeeded|compiled successfully|"
+                + "compilation passed|syntax check passed|syntax is valid|verification passed|verified successfully|"
+                + "测试通过|编译通过|验证通过).*");
+    }
+
+    private static String unavailableVerificationFinal(AgentProgress progress) {
+        String files = progress.currentUnavailableVerifications().stream()
+                .map(result -> result.file() + " (" + result.unavailableReason() + ")")
+                .collect(java.util.stream.Collectors.joining(", "));
+        return "The workspace change was made, but post-edit verification was UNAVAILABLE for " + files
+                + ". I cannot claim that syntax, compilation, or tests passed.";
+    }
+
     private static String editRecoveryFeedback(
             String toolName,
             String path,
@@ -1070,6 +1192,7 @@ public class Agent {
 
     private static boolean isAutoRereadMutationTool(String toolName) {
         return "apply_patch".equals(toolName)
+                || "replace_lines".equals(toolName)
                 || "insert_before".equals(toolName)
                 || "insert_after".equals(toolName)
                 || "create_file".equals(toolName);

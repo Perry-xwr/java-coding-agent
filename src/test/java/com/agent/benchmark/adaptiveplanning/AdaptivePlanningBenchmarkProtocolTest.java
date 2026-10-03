@@ -51,9 +51,9 @@ class AdaptivePlanningBenchmarkProtocolTest {
         Files.writeString(reactive.resolve("notes.txt"), "changed");
         Path planned = workspaces.reset(task, fixtures, runs, "isolation", PlanningMode.PLAN_EXECUTE);
         assertNotEquals(reactive, planned);
-        assertEquals("Status: draft\n", Files.readString(planned.resolve("notes.txt")));
+        assertEquals("Status: draft\n", normalizedLineEndings(Files.readString(planned.resolve("notes.txt"))));
         Path reset = workspaces.reset(task, fixtures, runs, "isolation", PlanningMode.REACTIVE);
-        assertEquals("Status: draft\n", Files.readString(reset.resolve("notes.txt")));
+        assertEquals("Status: draft\n", normalizedLineEndings(Files.readString(reset.resolve("notes.txt"))));
     }
 
     @Test
@@ -168,5 +168,9 @@ class AdaptivePlanningBenchmarkProtocolTest {
 
     private static AdaptivePlanningTask simpleTask() throws Exception {
         return new AdaptivePlanningTaskLoader().load(MANIFEST).get(0);
+    }
+
+    private static String normalizedLineEndings(String content) {
+        return content.replace("\r\n", "\n");
     }
 }

@@ -1,6 +1,8 @@
 package com.agent.agent;
 
 import com.agent.environment.AgentEnvironment;
+import com.agent.environment.verification.VerificationResult;
+import com.agent.environment.verification.VerificationStatus;
 import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
@@ -114,6 +116,12 @@ class AdaptivePlanningIntegrationTest {
             public List<ToolDefinition> toolDefinitions() {
                 return List.of(new ToolDefinition("apply_patch", "apply edit", Map.of()),
                         new ToolDefinition("read_file", "read file", Map.of()));
+            }
+
+            @Override
+            public VerificationResult verifyPostEdit(String relativePath, long mutationSequence) {
+                return new VerificationResult(VerificationStatus.NOT_APPLICABLE,
+                        Path.of(relativePath), "scripted-environment", "", "", mutationSequence);
             }
         };
         return new Agent(client, environment, "test CODE prompt", 8,

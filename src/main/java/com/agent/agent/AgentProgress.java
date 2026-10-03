@@ -2,10 +2,14 @@ package com.agent.agent;
 
 import com.agent.tool.ToolResult;
 import com.agent.tool.ToolErrorCode;
+import com.agent.environment.verification.VerificationResult;
+import com.agent.environment.verification.VerificationStatus;
 
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.HashMap;
+import java.util.List;
 
 public final class AgentProgress {
     private boolean workspaceMutationSucceeded;
@@ -35,6 +39,9 @@ public final class AgentProgress {
     private String latestDiagnosticType;
     private String latestDiagnosticSummary;
     private AgentPlan plan;
+    private long mutationSequence;
+    private final Map<String, Long> mutationSequences = new HashMap<>();
+    private final Map<String, VerificationResult> verificationResults = new HashMap<>();
 
     public void observe(
             String toolName,
@@ -52,6 +59,12 @@ public final class AgentProgress {
             workspaceMutationSucceeded = true;
             lastModifiedFile = text(arguments.get("path"));
             lastPatchStep = stepIndex;
+            if (lastModifiedFile != null && !lastModifiedFile.isBlank()) {
+                long sequence = ++mutationSequence;
+                String key = pathKey(lastModifiedFile);
+                mutationSequences.put(key, sequence);
+                verificationResults.remove(key);
+            }
             verificationRequired = true;
             postMutationReadSeen = false;
             convergenceGuidancePending = true;
@@ -216,6 +229,50 @@ public final class AgentProgress {
 
     public int lastPatchStep() {
         return lastPatchStep;
+    }
+
+    public boolean latestJavaMutationRequiresMavenVerification() {
+        if (!lastMutationIsJavaSource()) {
+            return false;
+        }
+        VerificationResult result = verificationResults.get(pathKey(lastModifiedFile));
+        return result == null || "none".equals(result.verifierId())
+                || "java-maven-project".equals(result.verifierId());
+    }
+
+    public long currentMutationSequence(String path) {
+        return path == null ? 0 : mutationSequences.getOrDefault(pathKey(path), 0L);
+    }
+
+    public void observeVerification(VerificationResult result) {
+        if (result == null || result.file() == null) {
+            return;
+        }
+        String key = pathKey(result.file().toString());
+        long currentSequence = mutationSequences.getOrDefault(key, 0L);
+        if (currentSequence != 0 && currentSequence == result.mutationSequence()) {
+            verificationResults.put(key, result);
+        }
+    }
+
+    public boolean hasCurrentVerificationFailure() {
+        return verificationResults.entrySet().stream().anyMatch(entry ->
+                mutationSequences.getOrDefault(entry.getKey(), 0L) == entry.getValue().mutationSequence()
+                        && entry.getValue().status() == VerificationStatus.FAIL);
+    }
+
+    public List<VerificationResult> currentUnavailableVerifications() {
+        return currentVerificationResults().stream()
+                .filter(result -> result.status() == VerificationStatus.UNAVAILABLE)
+                .toList();
+    }
+
+    public List<VerificationResult> currentVerificationResults() {
+        return verificationResults.entrySet().stream()
+                .filter(entry -> mutationSequences.getOrDefault(entry.getKey(), 0L)
+                        == entry.getValue().mutationSequence())
+                .map(Map.Entry::getValue)
+                .toList();
     }
 
     public int lastTestFailureStep() {
