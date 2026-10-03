@@ -129,7 +129,7 @@ In two observed paired DEV rounds over the same eight `memory-v1` tasks, Legacy 
 
 ### Adaptive Planning Evaluation
 
-The `adaptive-planning-v1` protocol compares REACTIVE, PLAN_EXECUTE, and a zero-LLM heuristic ADAPTIVE router on nine DEV tasks. Its first live round was interrupted after repeated local proxy connection failures; the protocol correctly stopped before Round 2. The available single-round observations are incomplete and descriptive only, with no paired-repeatability or superiority claim. See [the adaptive-planning protocol and run note](benchmark/adaptive-planning-v1/README.md).
+The `adaptive-planning-v1` protocol compares REACTIVE, PLAN_EXECUTE, and a zero-LLM heuristic ADAPTIVE router on nine DEV tasks. Attempt 1 was interrupted by local proxy failures. Attempt 2 then completed two rounds over the same nine tasks: REACTIVE scored 7/18, PLAN_EXECUTE 9/18, and ADAPTIVE 8/18. These are repeated task-runs, not independent tasks, and do not establish a statistically significant advantage. All 26 Maven verification invocations in Attempt 2 failed while resolving Surefire from Maven Central because network access was denied, so Java verification outcomes remain infrastructure-limited. See [the adaptive-planning protocol and run note](benchmark/adaptive-planning-v1/README.md).
 
 ## Quick Start
 
