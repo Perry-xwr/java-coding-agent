@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -53,7 +54,7 @@ class CliAgentFactoryTest {
     }
 
     @Test
-    void codingProfileKeepsFrozenV1ToolSetAndGuard() throws Exception {
+    void codingProfileFiltersMavenForStandaloneWorkspaceAndKeepsGuard() throws Exception {
         RecordingClient client = new RecordingClient();
         Agent code = CliAgentFactory.createCoding(client, workspace, AgentEventListener.NO_OP);
 
@@ -62,7 +63,7 @@ class CliAgentFactoryTest {
         assertEquals(
                 List.of(
                         "list_files", "find_files", "read_file", "search_code", "apply_patch",
-                        "insert_before", "insert_after", "create_file", "run_maven_test"
+                        "insert_before", "insert_after", "create_file"
                 ),
                 client.toolNames().get(0)
         );
@@ -71,6 +72,18 @@ class CliAgentFactoryTest {
                 .anyMatch(message -> message.content().contains("[PLANNING_PHASE]")));
         assertTrue(client.requests().get(1).stream()
                 .anyMatch(message -> message.content().contains("PREMATURE_FINAL_GUARD")));
+    }
+
+    @Test
+    void codingProfileAdvertisesMavenWhenWorkspaceHasRootPom() throws Exception {
+        Files.writeString(workspace.resolve("pom.xml"), "<project/>\n");
+        RecordingClient client = new RecordingClient();
+        Agent code = CliAgentFactory.createCoding(client, workspace, AgentEventListener.NO_OP);
+
+        code.run("modify a file");
+
+        assertTrue(client.toolNames().get(0).contains("run_maven_test"));
+        assertTrue(client.toolNames().get(0).contains("apply_patch"));
     }
 
     @Test
