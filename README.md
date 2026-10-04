@@ -78,6 +78,17 @@ success; standalone Java continues to use its `javac` verifier. The legacy
 `Agent(LLMClient, ToolRegistry)` compatibility constructor keeps allow-all behavior for unknown
 environments; workspace-aware behavior is provided by the CLI's `LocalWorkspaceEnvironment` path.
 
+### V1.10 Tool Availability DEV Evaluation
+
+The two-mode DEV evaluation repeated the same 12 tasks twice (not 24 independent tasks). Both
+`LEGACY_ALL_TOOLS` and `ENVIRONMENT_AWARE` had 10/24 task-runs succeed. Maven was advertised on all
+Legacy turns, versus 66/158 Aware turns (all of those were safe Maven workspaces); both modes retained
+Maven use on valid Maven projects. No no-POM Maven invocation, mismatch execution, typed rejection,
+unexpected POM creation, or infrastructure failure was observed. Because mismatch attempts were zero
+in both modes, these results do not show reduced mismatch attempts, improved task success, or a causal
+request-cost benefit. This small stochastic DEV run is descriptive only. See the [V1.10 protocol and
+live results](benchmark/tool-availability-v1/README.md).
+
 ### V1.8 Edit Reliability Evaluation
 
 Attempts 1 and 2 are invalid infrastructure attempts and are retained separately. Attempt 3 completed both paired rounds after the verifier and stop-rule fixes, repeating the same 12 DEV tasks twice (not 24 independent tasks). Syntax false-success was observed in 7/24 `REREAD_ONLY` runs and 0/24 `POST_EDIT_VERIFY` runs, while final syntax FAIL occurred in 7 and 8 runs respectively. Both modes had 1/24 task success. Verification reported 10 FAIL events across 8 runs; 2 later repair mutations were attempted, but no condition recovered to PASS. These descriptive results do not establish general superiority or statistical significance. See the [V1.8 edit-reliability protocol and history](benchmark/edit-reliability-v1/README.md).
