@@ -1,254 +1,147 @@
 # Java Coding Agent
 
-A Java-based coding agent runtime with safe repository tools, code editing, controlled Maven testing, diagnostic recovery, structured trajectories, and benchmark-driven evaluation.
+**Model-agnostic Java Coding Agent Runtime and Evaluation Harness.** This research/educational project explores how bounded tool execution, workspace context, planning, verification, and recovery affect coding-agent behavior; it is not a production IDE replacement.
 
-## Overview
+## Why this project
 
-The project began as a Java course project and evolved into a coding-agent runtime plus an evaluation framework. The V1 runtime uses GLM function calling to inspect a repository, apply constrained edits, run Maven tests, observe typed failures, and continue a bounded ReAct-style loop.
+An LLM tool call succeeding does not imply that the workspace is correct. A coding agent also needs a bounded execution loop, safe workspace access, useful cross-turn context, verification, recovery from typed failures, and evaluation that checks the workspace instead of trusting the model's final prose.
 
-```text
-User Task
-   ↓
-LLM
-   ↓
-Agent Loop
-   ↓
-Tool Call
-   ↓
-Repository / Maven Environment
-   ↓
-Observation
-   ↓
-Recovery / Next Action
-   ↓
-Final Answer
+## Architecture
+
+```mermaid
+flowchart TD
+  U[User] --> CLI[Interactive CLI / AUTO Router]
+  CLI --> P[CHAT / READ / CODE profiles]
+  P --> M[Session Working Context]
+  M --> PP[Planning Policy]
+  PP --> A[Bounded Agent Loop]
+  A --> L[LLMClient]
+  L --> GLM[GLM]
+  L --> OA[OpenAI-compatible]
+  A --> E[AgentEnvironment]
+  E --> AV[Tool Availability]
+  E --> TR[ToolRegistry]
+  E --> WS[Workspace Safety]
+  E --> V[Post-edit Verification]
+  V --> R[Repair / Reverification]
+  A --> T[Trajectory]
+  T --> B[Benchmark / Independent Evaluator]
 ```
 
-Evaluation is kept separate from runtime execution:
+The runtime loop is:
 
 ```text
-Agent Run → Trajectory → Hidden Evaluator → Metrics → Failure Analysis
+User task → model decision → tool call → typed ToolResult → workspace change
+          → reread → verifier → PASS / FAIL / UNAVAILABLE
+                              FAIL → RepairDirective → fresh read
+                                   → bounded repair → reverify
 ```
 
-Working memory is session-level, bounded, non-persistent, and grounded in user requests and tool observations. It is not long-term memory, semantic retrieval, or RAG.
+Unavailable tools are hidden from model definitions and checked again before dispatch, so a stale call is rejected. The current production environment policy is deliberately narrow: it gates `run_maven_test` on a safe regular `pom.xml` at the workspace root.
 
-## Key Features
+## Key capabilities
 
-- ReAct-style multi-step Agent loop and function calling
-- Interactive `CHAT` / `READ` / `CODE` modes plus deterministic `AUTO` routing, with streamed model output
-- Workspace confinement with traversal and symlink-escape rejection
-- Repository inspection and discovery, safe new-file creation, exact anchored editing, and controlled Maven testing
-- Compiler/test diagnostic parsing and bounded recovery behavior
-- Post-edit evidence gates: reread changed files and require Maven evidence for Java changes
-- Generic post-edit syntax/compile verification for common source files when local tools are available
-- Typed `ToolResult` observations and error codes
-- Bounded structured session working memory for active tasks, explicit targets, discovered files, verified tool facts, recent typed failures, and the last mutation
-- Structured Agent trajectories for reproducible analysis
-- Isolated benchmark fixtures with hidden deterministic evaluation
-- Failure analysis and multiple Agent-strategy experiments
-
-## Tools
-
-| Tool | Purpose |
-|---|---|
-| `list_files` | Inspect repository files recursively |
-| `find_files` | Discover workspace files by safe glob pattern without reading file contents |
-| `read_file` | Read UTF-8 source files |
-| `search_code` | Search code with relative paths and line numbers |
-| `apply_patch` | Apply an exact, single-match edit to an existing file |
-| `insert_before` | Insert text before one exact, unique anchor in an existing file |
-| `insert_after` | Insert text after one exact, unique anchor in an existing file |
-| `create_file` | Create one new UTF-8 text file without overwriting an existing path |
-| `run_maven_test` | Run controlled Maven validation with optional test selection |
-| `replace_lines` | Experimental guarded line-based editing; not part of the V1 default strategy |
-
-## Generic Post-edit Verification
-
-A successful file mutation confirms only that text was written; it does not prove that the source is valid. In the local workspace environment, changed Python, JavaScript, C, C++, and standalone Java files are checked with the corresponding local syntax/compiler command when available. Java files in Maven workspaces continue to use the existing project-level `run_maven_test` path. A verifier failure is returned to the Agent as bounded diagnostics for a limited repair attempt; `UNAVAILABLE` (for example, a missing compiler or timeout) is distinct from `PASS` and does not count as verified. These checks cover syntax/compilation or project tests, not semantic correctness. There is no transactional rollback yet, so a failed final verification may leave the last edited file state in the workspace.
-
-## Environment-aware Tool Availability
-
-The `ToolRegistry` remains the full tool catalog, while `AgentEnvironment` determines which
-registered tools are currently available. Unavailable tools are hidden from model definitions and
-availability is checked again immediately before dispatch to reject stale or invalid calls. The
-initial local policy is intentionally narrow: `run_maven_test` requires a safe regular `pom.xml` at
-the workspace root. Availability is recalculated during a run, so creating a root `pom.xml` can make
-the Maven tool available on the next model turn. This changes tool exposure, not tool-selection
-success; standalone Java continues to use its `javac` verifier. The legacy
-`Agent(LLMClient, ToolRegistry)` compatibility constructor keeps allow-all behavior for unknown
-environments; workspace-aware behavior is provided by the CLI's `LocalWorkspaceEnvironment` path.
-
-### V1.10 Tool Availability DEV Evaluation
-
-The two-mode DEV evaluation repeated the same 12 tasks twice (not 24 independent tasks). Both
-`LEGACY_ALL_TOOLS` and `ENVIRONMENT_AWARE` had 10/24 task-runs succeed. Maven was advertised on all
-Legacy turns, versus 66/158 Aware turns (all of those were safe Maven workspaces); both modes retained
-Maven use on valid Maven projects. No no-POM Maven invocation, mismatch execution, typed rejection,
-unexpected POM creation, or infrastructure failure was observed. Because mismatch attempts were zero
-in both modes, these results do not show reduced mismatch attempts, improved task success, or a causal
-request-cost benefit. This small stochastic DEV run is descriptive only. See the [V1.10 protocol and
-live results](benchmark/tool-availability-v1/README.md).
-
-### V1.8 Edit Reliability Evaluation
-
-Attempts 1 and 2 are invalid infrastructure attempts and are retained separately. Attempt 3 completed both paired rounds after the verifier and stop-rule fixes, repeating the same 12 DEV tasks twice (not 24 independent tasks). Syntax false-success was observed in 7/24 `REREAD_ONLY` runs and 0/24 `POST_EDIT_VERIFY` runs, while final syntax FAIL occurred in 7 and 8 runs respectively. Both modes had 1/24 task success. Verification reported 10 FAIL events across 8 runs; 2 later repair mutations were attempted, but no condition recovered to PASS. These descriptive results do not establish general superiority or statistical significance. See the [V1.8 edit-reliability protocol and history](benchmark/edit-reliability-v1/README.md).
-
-## Planning
-
-The CODE profile defaults to `REACTIVE`. Set `PLANNING_MODE=plan-execute` to opt into the
-experimental `PLAN_EXECUTE` strategy: each task run performs an independent PLAN → EXECUTE flow
-with at most one bounded REPLAN. The plan guides execution; it is not a verified workspace fact.
-This is optional experimental support, not multi-agent orchestration.
-
-Set `PLANNING_MODE=adaptive` to enable experimental zero-LLM planning routing: simple tasks stay
-reactive, while tasks with clear multi-step, multi-requirement, cross-file, or verification signals
-may use `PLAN_EXECUTE`. The deterministic heuristic runs before the first provider request and is
-not yet evaluated by an independent adaptive benchmark.
-
-### Planning Ablation
-
-In two paired live rounds over the same eight `planning-v1` DEV tasks, `REACTIVE` scored 2/8 then
-5/8, and `PLAN_EXECUTE` scored 3/8 then 2/8. Across the same eight tasks repeated twice (16 task-runs
-per mode, not independent tasks), the descriptive totals were 7/16 with 94 requests for REACTIVE
-and 5/16 with 119 requests for PLAN_EXECUTE. No repeatable success advantage was observed; this is
-a small, stochastic DEV experiment, not a statistical result. See [planning-v1 results](benchmark/planning-v1/README.md).
-
-## Safety Model
-
-V1 accepts workspace-relative paths only and rejects traversal, absolute paths, and Java NIO-detectable symlink escapes. It exposes no unrestricted write/delete operation and no arbitrary shell. Maven execution uses an allowlisted goal, a fixed working directory, validated test selectors, a timeout, and bounded output capture. Text replacement uses temporary files and atomic replacement when supported.
-
-These controls reduce risk but do not make execution completely secure. See [SECURITY.md](SECURITY.md) for the exact policy.
-
-## Benchmark
-
-Benchmark v0.1 contains 20 Java/Maven tasks: 6 DEV and 14 TEST. Categories are `BUG_FIX`, `LOGIC_FIX`, `TEST_FIX`, `SMALL_REFACTOR`, and `MULTI_STEP_DEBUG`, with EASY, MEDIUM, and HARD difficulty labels.
-
-Every task runs in an isolated fixture workspace. Evaluation combines hidden deterministic tests with behavior-first checks; strict source-content constraints are used only when the task explicitly requires them. See [docs/benchmark.md](docs/benchmark.md).
-
-## Experiments
-
-| Strategy | DEV Success |
-|---|---:|
-| REACT | 0/6 |
-| REACT_ACTION_ORIENTED | 3/6 |
-| **REACT_DIAGNOSTIC_RECOVERY** | **4/6** |
-| REACT_PLANNING | 3/6 |
-| REACT_PRECISE_EDIT | 1/6 |
-
-`REACT_DIAGNOSTIC_RECOVERY` was selected as the V1 default before held-out evaluation. Planning and precise editing are retained as negative experiments rather than hidden or discarded.
-
-The first and only frozen held-out TEST run scored **5/14 (35.71%)**. There was no tuning on TEST, no rerun, and no selection of a favorable random run. Detailed results are in [docs/v1-final-test-report.md](docs/v1-final-test-report.md).
-
-## Key Findings
-
-1. Action-oriented completion substantially improved actual tool execution on the DEV set.
-2. Diagnostic recovery achieved the strongest calibrated DEV result.
-3. Planning did not activate reliably under the tested protocol and model.
-4. Precise line editing recovered one exact-patch failure but introduced substantial interaction overhead.
-5. Held-out TEST performance was materially lower than DEV performance, revealing generalization limits, especially for refactoring and recovery.
-
-The samples are small; these are descriptive findings, not claims of statistical significance.
-
-## Evaluation
-
-The repository contains three evaluation tracks:
-
-- V0.1 historical benchmark for early Java/Maven agent behavior
-- V1.2 coding-agent benchmark for the current interactive runtime
-- `memory-v1` paired ablation benchmark comparing legacy file-reference context with structured session working memory
-
-In two observed paired DEV rounds over the same eight `memory-v1` tasks, Legacy Context scored 6/8 in both rounds and Structured Memory scored 7/8 in both rounds. This is a small descriptive result, not a statistically significant estimate: the task set is small, model behavior is stochastic, and one task has a known completion-contract limitation. The cleanest repeated signal was lower cross-turn overhead when continuing from the last mutation. See [the memory-v1 protocol](benchmark/memory-v1/README.md).
-
-### Adaptive Planning Evaluation
-
-The `adaptive-planning-v1` protocol compares REACTIVE, PLAN_EXECUTE, and a zero-LLM heuristic ADAPTIVE router on nine DEV tasks. Attempt 1 was interrupted by local proxy failures. Attempt 2 then completed two rounds over the same nine tasks: REACTIVE scored 7/18, PLAN_EXECUTE 9/18, and ADAPTIVE 8/18. These are repeated task-runs, not independent tasks, and do not establish a statistically significant advantage. All 26 Maven verification invocations in Attempt 2 failed while resolving Surefire from Maven Central because network access was denied, so Java verification outcomes remain infrastructure-limited. See [the adaptive-planning protocol and run note](benchmark/adaptive-planning-v1/README.md).
-
-### Verification-guided Repair Evaluation (V1.9)
-
-Two live paired rounds compared `VERIFICATION_ONLY` with `GUIDED_REPAIR` over the same 12
-Python, JavaScript, and standalone-Java DEV tasks repeated twice. Task success was 5/24 for
-`VERIFICATION_ONLY` and 6/24 for `GUIDED_REPAIR`; each mode recovered one run among runs with an
-observed verification failure (1/12 and 1/8 respectively). Eligibility depends on each mode's
-trajectory, so these conditional rates are descriptive and do not establish a causal or
-statistically significant repair advantage. The mandatory fresh-read guard was observed five times
-in guided runs, demonstrating changed repair behavior but not improved repair success. Repeated-FAIL
-runs (5 vs. 2) and unresolved eligible runs (11 vs. 7) were fewer in guided runs; because trajectories
-and eligibility differed, these are observations, not evidence that guided repair reduced failures.
-Syntax false-success remained 0 in both modes, while workspace/content-level false-success outcomes
-were 5 and 11, so completion correctness remained imperfect. Syntax PASS is not semantic correctness.
-See the [V1.9 repair-reliability protocol and results](benchmark/repair-reliability-v1/README.md).
+- **Production/default CLI:** `AUTO` routing to `CHAT`, `READ`, or `CODE`; workspace-confined file tools; bounded structured session working context; `LLMClient` and `AgentEnvironment` abstractions; typed tool results; generic post-edit verification; guided repair; dynamic Maven-tool availability; trajectory logging.
+- **Experimental:** opt-in `PLAN_EXECUTE` and `ADAPTIVE` planning policies, plus benchmark-only ablations. The CODE profile defaults to `REACTIVE`.
+- **Main CODE tools:** `list_files`, `find_files`, `read_file`, `search_code`, `apply_patch`, `insert_before`, `insert_after`, `create_file`, and conditionally `run_maven_test`. `replace_lines` is experimental and not in the normal CLI profile.
+- **Providers:** GLM is the default and supports streaming. The OpenAI-compatible chat-completions adapter supports tool calling but is currently non-streaming.
 
 ## Quick Start
 
-Requirements: Java 17, Maven 3.9+, and a GLM API key by default. Model requests connect directly unless an HTTP proxy is explicitly configured with `MODEL_PROXY`.
+Requirements: Java 17 and Maven 3.9+.
 
 ```powershell
-$env:GLM_API_KEY="YOUR_KEY"
-# Optional, for example: $env:MODEL_PROXY="http://127.0.0.1:7897"
+git clone https://github.com/Perry-xwr/java-coding-agent.git
+Set-Location java-coding-agent
 mvn test
-mvn exec:java '-Dexec.mainClass=com.agent.Main'
 ```
 
-`MODEL_PROXY` is an optional HTTP proxy URL (`http://host:port`). It applies to both GLM and OpenAI-compatible providers. Without it, both clients use a direct connection. Invalid proxy URLs fail during configuration validation; API keys are never included in configuration diagnostics.
-
-The CLI starts in `AUTO` mode and deterministically routes clear workspace reads to `READ`, explicit workspace changes to `CODE`, and general questions to `CHAT`. Use `/chat`, `/read`, `/code`, or `/auto` to override the active mode. Output is streamed as it arrives. In `CODE`, successful writes must be reread before completion, and Java changes require a successful Maven test when the tool is available. Enter `clear` in `AUTO` mode to reset all profile histories and the short-lived workspace reference context. `GLM_DEBUG=true` enables HTTP status logging; it is off by default.
-
-The default model backend is GLM (`MODEL_PROVIDER=glm`, the default) and reads `GLM_API_KEY`. An optional non-streaming OpenAI-compatible backend can be selected with `MODEL_PROVIDER=openai-compatible`, `MODEL_BASE_URL`, and `MODEL_NAME`; `MODEL_API_KEY` is optional for local or otherwise unauthenticated endpoints. This backend supports chat completions and function/tool calling, but streaming remains GLM-only. Backend-specific settings are read from environment variables; no key is stored in the repository.
-
-For pasted multi-line prompts, normal paste capture is supported. `/begin` followed by `/end` remains the reliable explicit fallback when terminal input timing is ambiguous.
-
-Ordinary `mvn test` is deterministic and does not call GLM. The live smoke test is opt-in through `mvn test -Pglm-integration`.
-
-## Benchmark Usage
-
-The benchmark requires `GLM_API_KEY`. The exact Maven invocation used by this repository is:
+Configure the default GLM provider and start the CLI:
 
 ```powershell
-mvn exec:exec '-Dexec.executable=java' '-Dexec.args=-classpath %classpath com.agent.benchmark.BenchmarkMain --baseline react_diagnostic_recovery --split dev'
+$env:MODEL_PROVIDER = "glm"
+$env:GLM_API_KEY = "YOUR_API_KEY"
+# Optional proxy, only if your network requires it:
+# $env:MODEL_PROXY = "http://127.0.0.1:7897"
+mvn exec:java "-Dexec.mainClass=com.agent.Main"
 ```
 
-Supported baseline values include `react`, `react_action_oriented`, `react_diagnostic_recovery`, `react_planning`, and `react_precise_edit`. Filters also include `--category`, `--difficulty`, `--limit`, and `--output`.
+The CLI starts in `AUTO`; `/chat`, `/read`, `/code`, and `/auto` select a profile explicitly. `mvn test` is deterministic and does not call a model provider. See [Demo](demo/README.md) for three offline walkthroughs and optional live usage notes.
 
-> TEST is intended as held-out evaluation and should not be used for prompt or strategy tuning. The frozen V1 TEST run has already been completed and must not be rerun to select a better outcome.
+## Reliability / Evaluation
 
-## Documentation
+The repository contains historical and paired DEV evaluations for working memory, planning, adaptive planning, edit verification, verification-guided repair, and environment-aware Maven-tool availability. These are small, stochastic experiments, not statistical studies. Results and limitations are summarized in [Evaluation](docs/EVALUATION.md); the chronological research narrative is in [Evolution](docs/EVOLUTION.md).
 
-- [Architecture](docs/architecture.md)
-- [Benchmark design](docs/benchmark.md)
-- [Experiment record](docs/experiments.md)
-- [Failure analysis](docs/failure-analysis.md)
-- [Representative demo](examples/demo.md)
-- [V1 held-out TEST report](docs/v1-final-test-report.md)
+## Configuration
 
-## Known Limitations
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `MODEL_PROVIDER` | No | `glm` | `glm` or `openai-compatible`. |
+| `GLM_API_KEY` | For GLM | None | GLM credential; never store it in the repository. |
+| `MODEL_BASE_URL` | OpenAI-compatible | `https://open.bigmodel.cn/api/paas/v4` for GLM | Base URL; required for `openai-compatible`. |
+| `MODEL_NAME` | OpenAI-compatible | `glm-4-flash` | Model name; required for `openai-compatible`. |
+| `MODEL_API_KEY` | No | Unset | Optional key for OpenAI-compatible endpoints. |
+| `MODEL_PROXY` | No | Direct connection | Optional HTTP proxy URL, e.g. `http://host:port`. |
+| `PLANNING_MODE` | No | `reactive` | CODE planning: `reactive`, `plan-execute`, or `adaptive`; latter two are experimental. |
+| `GLM_DEBUG` | No | `false` | Set `true` to print GLM HTTP status diagnostics. |
 
-- Small benchmark and one primary model/provider
-- Stochastic LLM behavior and only one frozen TEST run
-- Java/Maven task scope rather than arbitrary repositories
-- No arbitrary shell or unrestricted file write/delete
-- Refactoring and recovery after compiler/test failures remain weak
-- Post-edit evidence does not guarantee semantic correctness of an edit
-- Streamed intermediate model text can appear before a final structured failure state
-- Automatic multi-line paste capture is timing-sensitive; `/begin` and `/end` are the reliable fallback
-- AUTO routing is deterministic and intentionally lightweight; ambiguous workspace requests default to safer read-only handling
-- Tool selection still depends on the LLM after routing
-- Structurally sensitive edits may still select a suboptimal insertion tool or anchor; the runtime has no AST parser
-- Verification for non-Java projects is limited compared with the Maven-based Java verification path
-- Post-edit verification is bounded syntax/compile checking, not semantic correctness; unsupported or unavailable verifiers are reported separately and are never treated as PASS
-- A failed verification feeds diagnostics back for bounded repair, but there is no transactional rollback if the final workspace state remains invalid
-- Working memory is session-only and is not persisted across CLI restarts
-- There is no persistent or semantic long-term memory and no RAG subsystem
-- Benchmark sets are small; reported results are descriptive rather than statistically significant
-- The `memory-v1` benchmark contains a known clarification/completion-contract limitation
-- This is a research/educational coding-agent runtime, not a production IDE replacement
-- No Multi-Agent system or Agentic RL in the current runtime
+Example OpenAI-compatible configuration (endpoint and credentials are user supplied):
 
-## Verification-guided Repair
+```powershell
+$env:MODEL_PROVIDER = "openai-compatible"
+$env:MODEL_BASE_URL = "https://your-compatible-endpoint/v1"
+$env:MODEL_NAME = "your-model-name"
+$env:MODEL_API_KEY = "YOUR_API_KEY" # optional for unauthenticated local endpoints
+```
 
-Verifier `FAIL` creates a structured repair context from the affected file and bounded diagnostic. The runtime requires a successful reread of that file before another repair mutation, and counts recovery only when a later verification passes. `UNAVAILABLE` does not trigger code repair. This feature is experimental; the small V1.9 live DEV evaluation is descriptive and does not establish a repair-success advantage.
+`MODEL_PROXY` is optional for either provider. The OpenAI-compatible backend is not currently streaming. Configuration and validation details are in [Design](docs/DESIGN.md).
 
-## Roadmap
+## Project structure
 
-V2 exploration: Agentic RL with verifiable coding rewards.
+```text
+src/main/java/com/agent/
+  agent/          bounded loop, memory, planning, recovery
+  environment/    workspace binding, availability, verification
+  llm/            provider interfaces and adapters
+  tool/           safe workspace tools and process execution
+benchmark/        frozen task protocols and fixtures
+docs/             design, evaluation, evolution, and interview notes
+demo/             small example workspaces and offline walkthroughs
+scripts/          local project verification
+```
 
-Possible future exploration, without commitment: Multi-Agent coordination and persistent Memory.
+## Design principles
+
+- Keep model, Agent, environment, tool catalog, and evaluation responsibilities separate.
+- Treat tool outcomes and verification evidence as structured data, not claims in model prose.
+- Bound iterations and workspace authority; fail closed on unsafe paths and unavailable capabilities.
+- Preserve negative and infrastructure-limited results, and describe small samples conservatively.
+
+Read [Design](docs/DESIGN.md), [Evaluation](docs/EVALUATION.md), [Evolution](docs/EVOLUTION.md), [Demo](demo/README.md), or [Resume / Interview Notes](docs/RESUME.md) for detail.
+
+## Known limitations
+
+- Model quality strongly affects tool choice, editing, and recovery; structurally sensitive edits can still select a poor tool or anchor.
+- Verification is syntax/build oriented, not proof of semantic correctness. `UNAVAILABLE` is distinct from `PASS`.
+- The small V1.9 DEV study did not show a stable recovery advantage; repair remains limited.
+- Environment-aware tool filtering currently covers only Maven-tool availability based on a safe root POM.
+- C/C++ verification requires local `gcc`/`g++`; verifier availability varies by machine.
+- There is no transactional rollback after an unsuccessful edit or final verification failure.
+- Several live evaluations use one provider/model; benchmark sets are small and descriptive, not statistically significant.
+- Planning and adaptive routing are experimental. The runtime is not an IDE replacement.
+
+## Development / tests
+
+Run all deterministic tests with:
+
+```powershell
+mvn test
+```
+
+For a local environment check plus the same test suite:
+
+```powershell
+./scripts/verify-project.ps1
+```
+
+The script does not install dependencies, configure the machine, or call a provider. Optional live model use is user-initiated and requires provider configuration above.
