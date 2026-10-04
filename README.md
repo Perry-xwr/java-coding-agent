@@ -140,6 +140,21 @@ In two observed paired DEV rounds over the same eight `memory-v1` tasks, Legacy 
 
 The `adaptive-planning-v1` protocol compares REACTIVE, PLAN_EXECUTE, and a zero-LLM heuristic ADAPTIVE router on nine DEV tasks. Attempt 1 was interrupted by local proxy failures. Attempt 2 then completed two rounds over the same nine tasks: REACTIVE scored 7/18, PLAN_EXECUTE 9/18, and ADAPTIVE 8/18. These are repeated task-runs, not independent tasks, and do not establish a statistically significant advantage. All 26 Maven verification invocations in Attempt 2 failed while resolving Surefire from Maven Central because network access was denied, so Java verification outcomes remain infrastructure-limited. See [the adaptive-planning protocol and run note](benchmark/adaptive-planning-v1/README.md).
 
+### Verification-guided Repair Evaluation (V1.9)
+
+Two live paired rounds compared `VERIFICATION_ONLY` with `GUIDED_REPAIR` over the same 12
+Python, JavaScript, and standalone-Java DEV tasks repeated twice. Task success was 5/24 for
+`VERIFICATION_ONLY` and 6/24 for `GUIDED_REPAIR`; each mode recovered one run among runs with an
+observed verification failure (1/12 and 1/8 respectively). Eligibility depends on each mode's
+trajectory, so these conditional rates are descriptive and do not establish a causal or
+statistically significant repair advantage. The mandatory fresh-read guard was observed five times
+in guided runs, demonstrating changed repair behavior but not improved repair success. Repeated-FAIL
+runs (5 vs. 2) and unresolved eligible runs (11 vs. 7) were fewer in guided runs; because trajectories
+and eligibility differed, these are observations, not evidence that guided repair reduced failures.
+Syntax false-success remained 0 in both modes, while workspace/content-level false-success outcomes
+were 5 and 11, so completion correctness remained imperfect. Syntax PASS is not semantic correctness.
+See the [V1.9 repair-reliability protocol and results](benchmark/repair-reliability-v1/README.md).
+
 ## Quick Start
 
 Requirements: Java 17, Maven 3.9+, and a GLM API key by default. Model requests connect directly unless an HTTP proxy is explicitly configured with `MODEL_PROXY`.
@@ -207,7 +222,7 @@ Supported baseline values include `react`, `react_action_oriented`, `react_diagn
 
 ## Verification-guided Repair
 
-Verifier `FAIL` creates a structured repair context from the affected file and bounded diagnostic. The runtime requires a successful reread of that file before another repair mutation, and counts recovery only when a later verification passes. `UNAVAILABLE` does not trigger code repair. This feature is experimental and has not yet been live-benchmarked.
+Verifier `FAIL` creates a structured repair context from the affected file and bounded diagnostic. The runtime requires a successful reread of that file before another repair mutation, and counts recovery only when a later verification passes. `UNAVAILABLE` does not trigger code repair. This feature is experimental; the small V1.9 live DEV evaluation is descriptive and does not establish a repair-success advantage.
 
 ## Roadmap
 
