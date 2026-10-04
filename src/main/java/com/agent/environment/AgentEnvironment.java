@@ -5,6 +5,7 @@ import com.agent.llm.ToolDefinition;
 import com.agent.tool.ToolResult;
 import com.agent.environment.verification.VerificationResult;
 import com.agent.environment.verification.VerificationStatus;
+import com.agent.environment.verification.VerificationCapability;
 
 import java.util.List;
 import java.nio.file.Path;
@@ -14,6 +15,10 @@ public interface AgentEnvironment {
     ToolResult execute(ToolCall toolCall);
 
     List<ToolDefinition> toolDefinitions();
+
+    default VerificationCapability verificationCapability(String relativePath) {
+        return VerificationCapability.unknown();
+    }
 
     default VerificationResult verifyPostEdit(String relativePath, long mutationSequence) {
         Path file;

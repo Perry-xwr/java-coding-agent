@@ -9,9 +9,12 @@ import com.agent.environment.verification.BuiltInCodeVerifiers;
 import com.agent.environment.verification.PostEditVerificationService;
 import com.agent.environment.verification.VerificationResult;
 import com.agent.environment.verification.VerifierRegistry;
+import com.agent.environment.verification.VerificationCapability;
 import com.agent.tool.execution.DefaultProcessRunner;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.util.List;
 import java.util.Objects;
 
@@ -56,5 +59,11 @@ public final class LocalWorkspaceEnvironment implements AgentEnvironment {
     @Override
     public VerificationResult verifyPostEdit(String relativePath, long mutationSequence) {
         return verificationService.verify(relativePath, mutationSequence);
+    }
+
+    @Override
+    public VerificationCapability verificationCapability(String relativePath) {
+        return VerificationCapability.forFile(relativePath,
+                Files.isRegularFile(workspaceRoot.resolve("pom.xml"), LinkOption.NOFOLLOW_LINKS));
     }
 }
