@@ -58,7 +58,7 @@ class CliAgentFactoryTest {
         RecordingClient client = new RecordingClient();
         Agent code = CliAgentFactory.createCoding(client, workspace, AgentEventListener.NO_OP);
 
-        code.run("modify a file");
+        var result = code.runWithTrajectory("modify a file");
 
         assertEquals(
                 List.of(
@@ -67,11 +67,12 @@ class CliAgentFactoryTest {
                 ),
                 client.toolNames().get(0)
         );
-        assertEquals(2, client.requests().size());
+        assertFalse(result.trajectory().completed());
+        assertEquals(Agent.MAX_ITERATIONS, client.requests().size());
         assertFalse(client.requests().get(0).stream()
                 .anyMatch(message -> message.content().contains("[PLANNING_PHASE]")));
         assertTrue(client.requests().get(1).stream()
-                .anyMatch(message -> message.content().contains("PREMATURE_FINAL_GUARD")));
+                .anyMatch(message -> message.content().startsWith("WORKSPACE_CHANGE_REQUIRED:")));
     }
 
     @Test
@@ -80,8 +81,9 @@ class CliAgentFactoryTest {
         RecordingClient client = new RecordingClient();
         Agent code = CliAgentFactory.createCoding(client, workspace, AgentEventListener.NO_OP);
 
-        code.run("modify a file");
+        var result = code.runWithTrajectory("modify a file");
 
+        assertFalse(result.trajectory().completed());
         assertTrue(client.toolNames().get(0).contains("run_maven_test"));
         assertTrue(client.toolNames().get(0).contains("apply_patch"));
     }

@@ -28,6 +28,10 @@ Mutation success means text was written, not that the program is correct. After 
 
 When verification returns `FAIL`, guided repair produces a structured `RepairDirective` from the observed file and bounded diagnostics. The Agent must perform a fresh read before another repair mutation, and a recovery is counted only when a later verification passes. Recovery is bounded and does not provide transactional rollback; an invalid final workspace may remain after a failed run.
 
+## Completion consistency
+
+For a clearly mutation-required CODE turn, a model final answer is not accepted until at least one successful workspace mutation (`ToolResult.success` and `changed=true`) occurs in that same `Agent.runWithTrajectory` call. This current-turn guard is distinct from verification: mutation existence confirms an edit happened, verification checks only the syntax/build condition it actually runs, and neither proves semantic task correctness or completion of every requested target. Read-only, advice, and explicitly non-mutating requests do not require a mutation; ambiguous requirements retain the existing completion behavior.
+
 ## Evaluation
 
 The benchmark runner copies fixtures into isolated workspaces, executes the Agent, then applies an independent evaluator to workspace state and trajectory evidence. The evaluator does not accept the model's final prose as proof of completion. Protocols record their own metrics and limitations; paired DEV results are descriptive and repeated task-runs are not independent observations. See [Evaluation](EVALUATION.md) and the source protocols under `benchmark/`.

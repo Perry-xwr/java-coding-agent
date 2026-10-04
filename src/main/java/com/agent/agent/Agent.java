@@ -46,6 +46,8 @@ public class Agent {
     private final AgentEventListener eventListener;
     private final boolean streamingEnabled;
     private final VerificationRepairPolicy verificationRepairPolicy;
+    private final WorkspaceChangeRequirementDetector workspaceChangeRequirementDetector =
+            new WorkspaceChangeRequirementDetector();
     private final List<Message> history = new ArrayList<>();
 
     public Agent(LLMClient llmClient, ToolRegistry toolRegistry) {
@@ -268,6 +270,11 @@ public class Agent {
         long runStartedNanos = System.nanoTime();
         List<AgentStep> steps = new ArrayList<>();
         AgentProgress progress = new AgentProgress();
+        WorkspaceChangeRequirementDetector.Requirement workspaceChangeRequirement =
+                taskMode == TaskMode.CODE_MODIFICATION
+                        ? workspaceChangeRequirementDetector.detect(routingTask)
+                        : WorkspaceChangeRequirementDetector.Requirement.NOT_REQUIRED;
+        boolean workspaceChangeFeedbackAdded = false;
         int prematureFinalGuards = 0;
         int validationGuards = 0;
         int failedTestGuards = 0;
@@ -396,6 +403,30 @@ public class Agent {
             List<ToolCall> toolCalls = response.toolCalls();
             history.add(Message.assistant(rawContent, toolCalls));
             if (toolCalls.isEmpty()) {
+                if (workspaceChangeRequirement == WorkspaceChangeRequirementDetector.Requirement.REQUIRED
+                        && !progress.hasSuccessfulMutation()) {
+                    steps.add(new AgentStep(
+                            steps.size() + 1,
+                            AgentActionType.COMPLETION_GUARD,
+                            null,
+                            null,
+                            null,
+                            Map.of("reason", "WORKSPACE_CHANGE_REQUIRED", "currentTurnMutationSequence", 0),
+                            null,
+                            null,
+                            "WORKSPACE_CHANGE_REQUIRED",
+                            System.currentTimeMillis(),
+                            0
+                    ));
+                    if (!workspaceChangeFeedbackAdded) {
+                        history.add(Message.system("WORKSPACE_CHANGE_REQUIRED: This task explicitly requires "
+                                + "a workspace change, but no successful workspace mutation has occurred "
+                                + "during this user turn. Read the relevant workspace state and perform "
+                                + "the requested change with an appropriate mutation tool before completing."));
+                        workspaceChangeFeedbackAdded = true;
+                    }
+                    continue;
+                }
                 if (taskMode == TaskMode.CODE_MODIFICATION
                         && !progress.currentUnavailableVerifications().isEmpty()
                         && claimsVerificationPassed(content)) {
@@ -403,7 +434,8 @@ public class Agent {
                 }
                 String feedback = null;
                 if (taskMode == TaskMode.CODE_MODIFICATION) {
-                    if (!progress.hasSuccessfulMutation() && prematureFinalGuards < 1) {
+                    if (workspaceChangeRequirement == WorkspaceChangeRequirementDetector.Requirement.UNKNOWN
+                            && !progress.hasSuccessfulMutation() && prematureFinalGuards < 1) {
                         prematureFinalGuards++;
                         mutationGuardStep = steps.size() + 1;
                         feedback = "PREMATURE_FINAL_GUARD: No workspace mutation succeeded. Do not "
@@ -411,7 +443,9 @@ public class Agent {
                                 + "with a recovery strategy. If the current file already satisfies the "
                                 + "request, confirm that with read_file and explicitly report that no "
                                 + "change was required; otherwise report the concrete failure honestly.";
-                    } else if (!progress.hasSuccessfulMutation()
+                    } else if (workspaceChangeRequirement
+                            == WorkspaceChangeRequirementDetector.Requirement.UNKNOWN
+                            && !progress.hasSuccessfulMutation()
                             && !progress.hasReadEvidenceAfter(mutationGuardStep)) {
                         String failure = "Workspace modification failed: no write operation succeeded "
                                 + "and no current file read confirmed that a change was unnecessary.";

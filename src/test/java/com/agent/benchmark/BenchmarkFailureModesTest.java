@@ -38,7 +38,7 @@ class BenchmarkFailureModesTest {
                 "test",
                 3,
                 TaskMode.CODE_MODIFICATION
-        ).runWithTrajectory("change code");
+        ).runWithTrajectory("Fix it");
         BenchmarkTask task = task("guard-metrics", List.of("apply_patch"));
         BenchmarkRunRecord record = new BenchmarkRunRecord(
                 task,

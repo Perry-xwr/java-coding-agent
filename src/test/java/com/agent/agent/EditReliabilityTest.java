@@ -42,7 +42,9 @@ class EditReliabilityTest {
         assertEquals("Recovered and verified.", result.finalAnswer());
         assertEquals("new", Files.readString(workspace.resolve("App.java")));
         assertEquals(1, feedbackCount(result, "EDIT_RECOVERY_INVALID_ARGUMENTS:"));
-        assertEquals(1, feedbackCount(result, "PREMATURE_FINAL_GUARD:"));
+        assertEquals(1, result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.COMPLETION_GUARD)
+                .filter(step -> "WORKSPACE_CHANGE_REQUIRED".equals(step.errorMessage())).count());
     }
 
     @Test
@@ -87,16 +89,18 @@ class EditReliabilityTest {
 
     @Test
     void allMutationFailuresProduceStructuredFailureInsteadOfSuccess() {
-        AgentRunResult result = agent(List.of(
-                call("invalid", "apply_patch", patch("App.java", "", "new")),
-                answer("Modification completed successfully."),
-                answer("The file is fixed.")
-        ), List.of()).runWithTrajectory("Modify App.java");
+        List<LLMResponse> responses = new java.util.ArrayList<>();
+        responses.add(call("invalid", "apply_patch", patch("App.java", "", "new")));
+        int maxIterations = 12;
+        for (int index = 0; index < maxIterations; index++) {
+            responses.add(answer("The modification is complete."));
+        }
+        AgentRunResult result = agent(responses, List.of()).runWithTrajectory("Modify App.java");
 
         assertFalse(result.trajectory().completed());
-        assertEquals("Workspace modification failed: no write operation succeeded "
-                + "and no current file read confirmed that a change was unnecessary.", result.finalAnswer());
-        assertEquals(1, feedbackCount(result, "MUTATION_FAILURE_FINAL:"));
+        assertEquals(TerminationReason.MAX_STEPS, result.trajectory().terminationReason());
+        assertEquals(maxIterations - 1, result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.COMPLETION_GUARD).count());
     }
 
     @Test
