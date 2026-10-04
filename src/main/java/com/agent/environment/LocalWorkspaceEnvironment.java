@@ -48,12 +48,45 @@ public final class LocalWorkspaceEnvironment implements AgentEnvironment {
     @Override
     public ToolResult execute(ToolCall toolCall) {
         Objects.requireNonNull(toolCall, "toolCall must not be null");
+        ToolAvailabilityDecision availability = toolAvailability(toolCall.name());
+        if (!availability.available()) {
+            return availability.rejectionResult();
+        }
         return toolRegistry.execute(toolCall.name(), toolCall.arguments());
     }
 
     @Override
     public List<ToolDefinition> toolDefinitions() {
-        return toolRegistry.definitions();
+        return toolRegistry.definitions().stream()
+                .filter(definition -> toolAvailability(definition.name()).available())
+                .toList();
+    }
+
+    @Override
+    public ToolAvailabilityDecision toolAvailability(String toolName) {
+        Objects.requireNonNull(toolName, "toolName must not be null");
+        if (!"run_maven_test".equals(toolName)) {
+            return ToolAvailabilityDecision.available(toolName,
+                    "This tool is not restricted by the local Maven workspace policy.",
+                    workspaceHasSafeRootPom() ? "MAVEN" : "STANDALONE");
+        }
+        if (workspaceHasSafeRootPom()) {
+            return ToolAvailabilityDecision.available(toolName,
+                    "A regular root pom.xml was detected.", "MAVEN");
+        }
+        return ToolAvailabilityDecision.unavailable(toolName,
+                "no safe root pom.xml was detected.", "STANDALONE");
+    }
+
+    @Override
+    public boolean projectTestVerificationAvailable() {
+        return toolAvailability("run_maven_test").available();
+    }
+
+    private boolean workspaceHasSafeRootPom() {
+        Path pom = workspaceRoot.resolve("pom.xml").normalize();
+        return pom.startsWith(workspaceRoot)
+                && Files.isRegularFile(pom, LinkOption.NOFOLLOW_LINKS);
     }
 
     @Override

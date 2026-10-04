@@ -7,6 +7,7 @@ import com.agent.llm.ToolCall;
 import com.agent.llm.ToolDefinition;
 import com.agent.llm.StreamingLlmClient;
 import com.agent.environment.AgentEnvironment;
+import com.agent.environment.ToolAvailabilityDecision;
 import com.agent.environment.verification.VerificationResult;
 import com.agent.environment.verification.VerificationStatus;
 import com.agent.tool.ToolResult;
@@ -282,9 +283,6 @@ public class Agent {
         int mutationGuardStep = 0;
         String previousFailedAction = null;
         int consecutiveIdenticalFailures = 0;
-        boolean mavenVerificationAvailable = environment.toolDefinitions().stream()
-                .anyMatch(definition -> "run_maven_test".equals(definition.name()));
-
         if (taskMode == TaskMode.CODE_MODIFICATION && verificationRepairPolicy.guidedRepairEnabled()) {
             com.agent.environment.verification.VerificationCapability capability =
                     environment.verificationCapability("__capability_probe__.java");
@@ -481,7 +479,7 @@ public class Agent {
                                 runStartedAt, runStartedNanos, progress.plan(), planExecute, planningFallback
                         );
                     } else if (progress.latestJavaMutationRequiresMavenVerification()
-                            && mavenVerificationAvailable
+                            && environment.projectTestVerificationAvailable()
                             && !progress.postMutationTestSeen()
                             && !Boolean.TRUE.equals(progress.postMutationTestPassed())
                             && validationGuards < 1) {
@@ -490,7 +488,7 @@ public class Agent {
                                 + "successful Maven test has verified the latest mutation. Run Maven tests "
                                 + "before claiming that verification passed.";
                     } else if (progress.latestJavaMutationRequiresMavenVerification()
-                            && mavenVerificationAvailable
+                            && environment.projectTestVerificationAvailable()
                             && !progress.postMutationTestSeen()
                             && !Boolean.TRUE.equals(progress.postMutationTestPassed())) {
                         String failure = "Java workspace modification was written and reread, but no "
@@ -553,7 +551,10 @@ public class Agent {
                 boolean repairReadWasRequired = "read_file".equals(toolCall.name())
                         && verificationRepairPolicy.guidedRepairEnabled()
                         && progress.requiresRepairRead(toolPath);
-                ToolResult toolResult = isWorkspaceMutationTool(toolCall.name())
+                ToolAvailabilityDecision availability = environment.toolAvailability(toolCall.name());
+                ToolResult toolResult = !availability.available()
+                        ? availability.rejectionResult()
+                        : isWorkspaceMutationTool(toolCall.name())
                         && verificationRepairPolicy.guidedRepairEnabled()
                         && progress.requiresRepairRead(toolPath)
                         ? ToolResult.failure(

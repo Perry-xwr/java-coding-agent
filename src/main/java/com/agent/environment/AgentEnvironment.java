@@ -14,7 +14,20 @@ import java.nio.file.Path;
 public interface AgentEnvironment {
     ToolResult execute(ToolCall toolCall);
 
+    /** Returns the currently available model-facing tool definitions. */
     List<ToolDefinition> toolDefinitions();
+
+    /** Unknown or unrestricted environments preserve existing registry behavior. */
+    default ToolAvailabilityDecision toolAvailability(String toolName) {
+        return ToolAvailabilityDecision.available(toolName,
+                "No environment-specific restriction applies.", "UNKNOWN");
+    }
+
+    /** Whether project-level test verification is currently available. */
+    default boolean projectTestVerificationAvailable() {
+        return toolDefinitions().stream().anyMatch(definition ->
+                "run_maven_test".equals(definition.name()));
+    }
 
     default VerificationCapability verificationCapability(String relativePath) {
         return VerificationCapability.unknown();

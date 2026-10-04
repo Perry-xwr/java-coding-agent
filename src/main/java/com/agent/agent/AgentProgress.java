@@ -121,7 +121,8 @@ public final class AgentProgress {
                 }
             }
         }
-        if ("run_maven_test".equals(toolName)) {
+        if ("run_maven_test".equals(toolName)
+                && result.errorCode() != ToolErrorCode.TOOL_UNAVAILABLE_IN_ENVIRONMENT) {
             runTest = true;
             lastTestPassed = result.success();
             if (verificationRequired && stepIndex > lastPatchStep) {
