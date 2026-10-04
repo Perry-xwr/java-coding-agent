@@ -284,19 +284,21 @@ class InsertAfterAgentFlowTest {
     void ambiguousAnchorReturnsObservationWithoutChoosingAnInsertionPoint() throws Exception {
         String original = "anchor\nanchor\n";
         Files.writeString(workspace.resolve("hello.cpp"), original);
-        QueueClient client = new QueueClient(List.of(
+        List<LLMResponse> scripted = new java.util.ArrayList<>(List.of(
                 response("", call("ambiguous", "insert_after",
                         "{\"path\":\"hello.cpp\",\"anchor\":\"anchor\",\"content\":\"\\ncontent\"}")),
-                response("", call("reread", "read_file", "{\"path\":\"hello.cpp\"}")),
-                response("The anchor is ambiguous; no change was made."),
-                response("The anchor is ambiguous; no change was made.")
-        ));
+                response("", call("reread", "read_file", "{\"path\":\"hello.cpp\"}"))));
+        scripted.addAll(java.util.Collections.nCopies(6,
+                response("The anchor is ambiguous; no change was made.")));
+        QueueClient client = new QueueClient(scripted);
         Agent agent = codingAgent(client);
 
-        assertEquals("Workspace modification failed: no write operation succeeded "
-                + "and no current file read confirmed that a change was unnecessary.",
-                agent.run("Insert content in hello.cpp"));
+        AgentRunResult result = agent.runWithTrajectory("Insert content in hello.cpp");
+        assertFalse(result.trajectory().completed());
+        assertEquals(TerminationReason.MAX_STEPS, result.trajectory().terminationReason());
         assertEquals(original, Files.readString(workspace.resolve("hello.cpp")));
+        assertEquals(6, result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.COMPLETION_GUARD).count());
         assertTrue(agent.history().stream().anyMatch(message ->
                 message.role().equals("tool") && message.content().contains("AMBIGUOUS_MATCH")));
     }

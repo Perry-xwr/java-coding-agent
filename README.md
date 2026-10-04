@@ -41,7 +41,7 @@ Unavailable tools are hidden from model definitions and checked again before dis
 
 ## Key capabilities
 
-- **Production/default CLI:** `AUTO` routing to `CHAT`, `READ`, or `CODE`; workspace-confined file tools; bounded structured session working context; `LLMClient` and `AgentEnvironment` abstractions; typed tool results; generic post-edit verification; guided repair; dynamic Maven-tool availability; trajectory logging.
+- **Production/default CLI:** `AUTO` routing to `CHAT`, `READ`, or `CODE`; workspace-confined file tools; bounded structured session working context; `LLMClient` and `AgentEnvironment` abstractions; typed tool results; current-turn mutation-required completion guard; generic post-edit verification; guided repair; dynamic Maven-tool availability; trajectory logging.
 - **Experimental:** opt-in `PLAN_EXECUTE` and `ADAPTIVE` planning policies, plus benchmark-only ablations. The CODE profile defaults to `REACTIVE`.
 - **Main CODE tools:** `list_files`, `find_files`, `read_file`, `search_code`, `apply_patch`, `insert_before`, `insert_after`, `create_file`, and conditionally `run_maven_test`. `replace_lines` is experimental and not in the normal CLI profile.
 - **Providers:** GLM is the default and supports streaming. The OpenAI-compatible chat-completions adapter supports tool calling but is currently non-streaming.
@@ -123,6 +123,7 @@ Read [Design](docs/DESIGN.md), [Evaluation](docs/EVALUATION.md), [Evolution](doc
 
 - Model quality strongly affects tool choice, editing, and recovery; structurally sensitive edits can still select a poor tool or anchor.
 - Verification is syntax/build oriented, not proof of semantic correctness. `UNAVAILABLE` is distinct from `PASS`.
+- The completion guard establishes that a mutation occurred during the current user turn; it does not prove every requested target or semantic requirement was fulfilled.
 - The small V1.9 DEV study did not show a stable recovery advantage; repair remains limited.
 - Environment-aware tool filtering currently covers only Maven-tool availability based on a safe root POM.
 - C/C++ verification requires local `gcc`/`g++`; verifier availability varies by machine.

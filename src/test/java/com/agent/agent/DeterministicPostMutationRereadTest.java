@@ -70,10 +70,14 @@ class DeterministicPostMutationRereadTest {
     @Test
     void failedMutationDoesNotAutoReread() throws Exception {
         Files.writeString(workspace.resolve("note.txt"),"actual");
-        AgentRunResult result=agent(responses(
-                call("patch","apply_patch","{\"path\":\"note.txt\",\"oldText\":\"missing\",\"newText\":\"new\"}"),
-                answer("done"),answer("done")),List.of()).runWithTrajectory("update note.txt");
+        List<LLMResponse> scripted = new java.util.ArrayList<>();
+        scripted.add(new LLMResponse("", List.of(call("patch","apply_patch",
+                "{\"path\":\"note.txt\",\"oldText\":\"missing\",\"newText\":\"new\"}"))));
+        scripted.addAll(java.util.Collections.nCopies(9, answer("done")));
+        AgentRunResult result=agent(scripted,List.of()).runWithTrajectory("update note.txt");
         assertTrue(autoRereads(result).isEmpty());
+        assertFalse(result.trajectory().completed());
+        assertEquals(TerminationReason.MAX_STEPS, result.trajectory().terminationReason());
     }
 
     @Test
