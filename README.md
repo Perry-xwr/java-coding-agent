@@ -74,7 +74,9 @@ availability is checked again immediately before dispatch to reject stale or inv
 initial local policy is intentionally narrow: `run_maven_test` requires a safe regular `pom.xml` at
 the workspace root. Availability is recalculated during a run, so creating a root `pom.xml` can make
 the Maven tool available on the next model turn. This changes tool exposure, not tool-selection
-success; standalone Java continues to use its `javac` verifier.
+success; standalone Java continues to use its `javac` verifier. The legacy
+`Agent(LLMClient, ToolRegistry)` compatibility constructor keeps allow-all behavior for unknown
+environments; workspace-aware behavior is provided by the CLI's `LocalWorkspaceEnvironment` path.
 
 ### V1.8 Edit Reliability Evaluation
 
