@@ -63,16 +63,17 @@ class CliAgentFactoryTest {
         assertEquals(
                 List.of(
                         "list_files", "find_files", "read_file", "search_code", "apply_patch",
-                        "insert_before", "insert_after", "create_file"
+                        "apply_context_patch", "insert_before", "insert_after", "create_file"
                 ),
                 client.toolNames().get(0)
         );
         assertFalse(result.trajectory().completed());
-        assertEquals(Agent.MAX_ITERATIONS, client.requests().size());
+        assertEquals(2, client.requests().size(), "required-mutation final rejection is bounded to one recovery request");
         assertFalse(client.requests().get(0).stream()
                 .anyMatch(message -> message.content().contains("[PLANNING_PHASE]")));
         assertTrue(client.requests().get(1).stream()
                 .anyMatch(message -> message.content().startsWith("WORKSPACE_CHANGE_REQUIRED:")));
+        assertTrue(result.finalAnswer().contains("WORKSPACE_CHANGE_NOT_COMPLETED"));
     }
 
     @Test

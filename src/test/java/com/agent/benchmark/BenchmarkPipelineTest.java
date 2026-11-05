@@ -6,6 +6,7 @@ import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
+import com.agent.tool.TestingToolRegistries;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -69,7 +70,9 @@ class BenchmarkPipelineTest {
         ));
         Supplier<LLMClient> supplier = clients::removeFirst;
         ProcessRunner passingEvaluator = (command, directory, timeout, maxOutput) ->
-                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 5);
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS",
+                        false, 5);
         DeterministicTaskEvaluator evaluator = new DeterministicTaskEvaluator(
                 manager,
                 root("benchmark", "hidden", "v0.1"),
@@ -77,7 +80,9 @@ class BenchmarkPipelineTest {
                 passingEvaluator,
                 new EvaluationSpecLoader().load(root(
                         "benchmark", "tasks", "v0.1", "evaluation-checks.json"
-                ))
+                )),
+                (workspace, arguments) -> TestingToolRegistries.runMavenTest(
+                        workspace, passingEvaluator, root(".m2", "repository"), arguments)
         );
         BenchmarkResultWriter writer = new BenchmarkResultWriter(temporary.resolve("results"));
         BenchmarkRunner runner = new BenchmarkRunner(

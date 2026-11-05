@@ -98,8 +98,9 @@ class EditReliabilityTest {
         AgentRunResult result = agent(responses, List.of()).runWithTrajectory("Modify App.java");
 
         assertFalse(result.trajectory().completed());
-        assertEquals(TerminationReason.MAX_STEPS, result.trajectory().terminationReason());
-        assertEquals(maxIterations - 1, result.trajectory().steps().stream()
+        assertEquals(TerminationReason.FINAL_ANSWER, result.trajectory().terminationReason());
+        assertTrue(result.finalAnswer().contains("WORKSPACE_CHANGE_NOT_COMPLETED"));
+        assertEquals(1, result.trajectory().steps().stream()
                 .filter(step -> step.actionType() == AgentActionType.COMPLETION_GUARD).count());
     }
 
@@ -157,7 +158,7 @@ class EditReliabilityTest {
     private Agent agent(List<LLMResponse> responses, List<ProcessExecutionResult> processResults) {
         return new Agent(
                 fake(responses),
-                ToolRegistry.withCliCodingTools(
+                com.agent.tool.TestingToolRegistries.withCliCodingTools(
                         workspace,
                         new QueueRunner(processResults),
                         workspace.resolve(".m2/repository")
@@ -210,7 +211,8 @@ class EditReliabilityTest {
     }
 
     private static ProcessExecutionResult passed() {
-        return new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 2);
+        return new ProcessExecutionResult(0, false,
+                "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 2);
     }
 
     private static final class QueueRunner implements ProcessRunner {

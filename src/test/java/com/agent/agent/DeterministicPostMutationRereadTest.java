@@ -77,7 +77,8 @@ class DeterministicPostMutationRereadTest {
         AgentRunResult result=agent(scripted,List.of()).runWithTrajectory("update note.txt");
         assertTrue(autoRereads(result).isEmpty());
         assertFalse(result.trajectory().completed());
-        assertEquals(TerminationReason.MAX_STEPS, result.trajectory().terminationReason());
+        assertEquals(TerminationReason.FINAL_ANSWER, result.trajectory().terminationReason());
+        assertTrue(result.finalAnswer().contains("WORKSPACE_CHANGE_NOT_COMPLETED"));
     }
 
     @Test
@@ -131,7 +132,7 @@ class DeterministicPostMutationRereadTest {
     }
 
     private Agent agent(List<LLMResponse> responses,List<ProcessExecutionResult> processResults) {
-        return new Agent(fake(responses),ToolRegistry.withCliCodingTools(
+        return new Agent(fake(responses),com.agent.tool.TestingToolRegistries.withCliCodingTools(
                 workspace,new QueueRunner(processResults),workspace.resolve(".m2/repository")),
                 "test",10,TaskMode.CODE_MODIFICATION,true);
     }
@@ -166,7 +167,8 @@ class DeterministicPostMutationRereadTest {
         ArrayDeque<LLMResponse> queue=new ArrayDeque<>(values);
         return messages->queue.removeFirst();
     }
-    private static ProcessExecutionResult passed(){return new ProcessExecutionResult(0,false,"BUILD SUCCESS",false,1);}
+    private static ProcessExecutionResult passed(){return new ProcessExecutionResult(0,false,
+            "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS",false,1);}
 
     private static final class QueueRunner implements ProcessRunner {
         private final ArrayDeque<ProcessExecutionResult> results;

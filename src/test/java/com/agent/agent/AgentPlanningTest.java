@@ -97,21 +97,22 @@ class AgentPlanningTest {
     }
 
     @Test
-    void failedVerificationCanTriggerTheSingleBoundedReplan() {
+    void unavailableVerificationIsNotRetriedAndDoesNotBlockExplicitTaskWork() {
         ScriptedClient client = new ScriptedClient(List.of(
-                answer(plan("Verify and recover", "Run verification", "Create report")),
+                answer("{\"goal\":\"Create report after checking workspace\",\"steps\":["
+                        + "{\"id\":1,\"description\":\"Create report\"}] }"),
                 tool("test-1", "run_maven_test", "{}"),
-                answer(plan("Continue after test failure", "Retry verification", "Create report")),
-                tool("test-2", "run_maven_test", "{}"),
                 tool("create", "create_file", "{\"path\":\"verification.txt\",\"content\":\"done\"}"),
-                answer("Completed after bounded recovery.")));
+                answer("The report was created; Maven verification was unavailable.")));
 
         AgentRunResult result = codingAgent(client, PlanningMode.PLAN_EXECUTE, fileEnvironment())
                 .runWithTrajectory("Create a verification report after checking the workspace");
 
-        assertTrue(result.trajectory().completed());
-        assertEquals(1, count(result, AgentActionType.REPLAN));
-        assertEquals(2, client.requests.stream().filter(AgentPlanningTest::isPlanningRequest).count());
+        assertTrue(result.trajectory().completed(), result.trajectory().toString());
+        assertEquals(0, count(result, AgentActionType.REPLAN));
+        assertEquals(1, client.requests.stream().filter(AgentPlanningTest::isPlanningRequest).count());
+        assertEquals(1, result.trajectory().steps().stream()
+                .filter(step -> "run_maven_test".equals(step.toolName())).count());
         assertEquals("done", read("verification.txt"));
     }
 
@@ -158,7 +159,8 @@ class AgentPlanningTest {
             public ToolResult execute(ToolCall call) {
                 try {
                     if (call.name().equals("run_maven_test")) {
-                        return ToolResult.failure(ToolErrorCode.TEST_FAILED, "assertion failed");
+                        return ToolResult.failure(ToolErrorCode.TOOL_UNAVAILABLE_IN_ENVIRONMENT,
+                                "Maven is unavailable in this scripted file environment");
                     }
                     var args = MAPPER.readTree(call.arguments());
                     Path path = workspace.resolve(args.get("path").asText()).normalize();

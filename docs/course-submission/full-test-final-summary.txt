@@ -1,0 +1,18 @@
+Run completed: 2026-11-05 20:16:04 +08:00
+Isolated copy: D:\Development\agent-cli\target\course-final-regression-2a3802f4
+Command: mvn -o -f pom-isolated-test.xml -Dmaven.repo.local=.m2/repository test
+Exit code: 0; BUILD SUCCESS
+Surefire XML files: 152
+Tests: 1035
+Failures: 0
+Errors: 0
+Skipped: 16
+Compared main Java files: 343; hash differences: 0
+Compared test Java files: 156; hash differences: 0
+Main source tree SHA-256: 9EA3448F40E9BFA44E7B9DE82249ED3C75A62630FCEF9D0222FBB3F8938CB9C2
+Test source tree SHA-256: 20F64CC9D2F405A9A499ADB810A8E7B949C51486D45BA58A323B65E60183267C
+Original pom.xml SHA-256: 1B19C7E38011B3D9B26C490506F8BBCF1F4BEDF14889364D9571608AAAEA36E0
+Test POM SHA-256: F1B1DBCCA6E2F986212E387104C5E1FF8BD9A1DF78A945556458B38D2DD96C2B
+Test POM differs from root POM only in Surefire java.io.tmpdir, TEMP, TMP set to T:/; temporary drive mapping removed after run.
+Clone excludes .env, .git, .agent-cli and original target. Offline Maven cache copied from prior validated mirror.
+Provider credential environment variables were empty; Maven offline; HTTP tests used local mock loopback; real model API requests: 0.

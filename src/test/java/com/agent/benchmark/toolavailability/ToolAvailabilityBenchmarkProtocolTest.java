@@ -11,6 +11,7 @@ import com.agent.llm.ToolDefinition;
 import com.agent.tool.ToolResult;
 import com.agent.tool.ToolErrorCode;
 import com.agent.tool.ToolRegistry;
+import com.agent.tool.TestingToolRegistries;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -54,7 +55,8 @@ class ToolAvailabilityBenchmarkProtocolTest {
 
     @Test
     void allInitialFixturesPassTheDeterministicGateSeam() throws Exception {
-        ToolAvailabilityInfrastructureGate gate = new ToolAvailabilityInfrastructureGate(successRunner());
+        ToolAvailabilityInfrastructureGate gate = new ToolAvailabilityInfrastructureGate(successRunner(),
+                TestingToolRegistries::withCliCodingTools);
         var result = gate.check(tasks(), PROTOCOL.resolve("fixtures"), temporary.resolve("m2/repository"));
         assertTrue(result.ready(), result.checks().toString());
         assertEquals(12, result.checks().size());
@@ -67,7 +69,7 @@ class ToolAvailabilityBenchmarkProtocolTest {
             if (isMaven(command)) {
                 mavenRuns.incrementAndGet();
                 return new ProcessExecutionResult(1, false,
-                        "MissingProjectException: The goal requires a project but there is no POM in this directory.",
+                        "POM is missing: The goal requires a project but there is no POM in this directory.",
                         false, 1);
             }
             return pass();
@@ -77,11 +79,11 @@ class ToolAvailabilityBenchmarkProtocolTest {
         assertTrue(result.agentResult().trajectory().completed());
         assertTrue(result.agentResult().trajectory().steps().stream().anyMatch(step ->
                 step.toolResult() != null && !step.toolResult().success()
-                        && step.toolResult().errorMessage().contains("Maven tests failed")));
+                        && step.toolResult().errorCode() == ToolErrorCode.BUILD_CONFIGURATION_FAILURE));
         assertTrue(result.agentResult().trajectory().steps().stream().anyMatch(step ->
                 step.toolName() != null && step.toolName().equals("run_maven_test")
                         && step.toolResult() != null
-                        && step.toolResult().errorCode() == ToolErrorCode.TEST_FAILED));
+                        && step.toolResult().errorCode() == ToolErrorCode.BUILD_CONFIGURATION_FAILURE));
         assertEquals(1, mavenRuns.get());
         assertEquals(1, result.metrics().environmentMismatchAttempts());
         assertEquals(1, result.metrics().environmentMismatchExecutions());
@@ -213,7 +215,7 @@ class ToolAvailabilityBenchmarkProtocolTest {
                 new ProcessExecutionResult(1, false, "offline artifact missing", false, 1);
         var runner = new ToolAvailabilityBenchmarkRunner(
                 new ToolAvailabilityInfrastructureGate(failingOfflineRunner),
-                new ToolAvailabilityRuntimeHarness(successRunner()));
+                new ToolAvailabilityRuntimeHarness(successRunner(), TestingToolRegistries::withCliCodingTools));
         var summary = runner.run(tasks(), (task, mode) -> {
             providers.incrementAndGet();
             throw new AssertionError("Provider must not be constructed when the fixture gate fails");
@@ -264,7 +266,8 @@ class ToolAvailabilityBenchmarkProtocolTest {
                                                           PlanningMode planningMode) throws Exception {
         ToolAvailabilityTask task = tasks().stream().filter(t -> t.id().equals(taskId)).findFirst().orElseThrow();
         assertEquals(workspaceClass, task.workspaceClass());
-        ToolAvailabilityRuntimeHarness harness = new ToolAvailabilityRuntimeHarness(runner);
+        ToolAvailabilityRuntimeHarness harness = new ToolAvailabilityRuntimeHarness(runner,
+                TestingToolRegistries::withCliCodingTools);
         return harness.run(task, mode, new ScriptedClient(script), PROTOCOL.resolve("fixtures"),
                 temporary.resolve("runs"), runId, temporary.resolve("m2/repository"),
                 planningMode, VerificationRepairPolicy.GUIDED_REPAIR);
@@ -303,7 +306,8 @@ class ToolAvailabilityBenchmarkProtocolTest {
     }
 
     private static ProcessExecutionResult pass() {
-        return new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 1);
+        return new ProcessExecutionResult(0, false,
+                "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1);
     }
 
     private static boolean isMaven(List<String> command) {

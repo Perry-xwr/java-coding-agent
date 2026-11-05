@@ -33,11 +33,77 @@ class OpenAiCompatibleClientTest {
 
             assertEquals("hello", response.content());
             assertEquals(List.of(), response.toolCalls());
+            assertFalse(response.providerUsage().usageAvailable());
+            assertNull(response.providerUsage().inputTokens());
             JsonNode request = mapper.readTree(requestBody.get());
             assertEquals("test-model", request.path("model").asText());
             assertEquals("user", request.path("messages").get(0).path("role").asText());
             assertEquals("hi", request.path("messages").get(0).path("content").asText());
             assertNull(authorization.get());
+        }
+    }
+
+    @Test
+    void parsesDeepSeekNonStreamingUsageAndExactRequestContextMetrics() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        try (MockEndpoint endpoint = new MockEndpoint(200,
+                "{\"model\":\"deepseek-flash\",\"choices\":[{\"message\":{\"content\":\"ok\"}}],"
+                        + "\"usage\":{\"prompt_tokens\":12,\"completion_tokens\":3,\"total_tokens\":15,"
+                        + "\"prompt_cache_hit_tokens\":8,\"prompt_cache_miss_tokens\":4}}",
+                requestBody, new AtomicReference<>())) {
+            ModelRequestTelemetry.beginTask("usage-run", "CODE", 2);
+            LLMResponse response = endpoint.deepSeekClient().chat(
+                    List.of(Message.system("stable"), Message.user("task")),
+                    List.of(new ToolDefinition("read_file", "read", Map.of("type", "object"))));
+            ModelRequestUsageSummary summary = ModelRequestTelemetry.finishTask("usage-run");
+
+            assertEquals(12, response.providerUsage().inputTokens());
+            assertEquals(3, response.providerUsage().outputTokens());
+            assertEquals(15, response.providerUsage().totalTokens());
+            assertEquals(8, response.providerUsage().cacheHitTokens());
+            assertEquals(4, response.providerUsage().cacheMissTokens());
+            assertTrue(response.providerUsage().usageAvailable());
+            assertEquals("DEEPSEEK", response.requestUsage().provider());
+            assertEquals("deepseek-flash", response.requestUsage().model());
+            assertEquals(2, response.requestUsage().agentTurn());
+            assertEquals("CODE", response.requestUsage().profile());
+            assertEquals("SUCCEEDED", response.requestUsage().status());
+            assertEquals(2, response.requestUsage().context().messageCount());
+            assertEquals(1, response.requestUsage().context().toolDefinitionCount());
+            assertEquals(requestBody.get().getBytes(StandardCharsets.UTF_8).length,
+                    response.requestUsage().context().payloadBytes());
+            assertTrue(summary.usageComplete());
+            assertEquals(1, summary.requests().size());
+            assertEquals(15, summary.totalTokens());
+            assertEquals(8, summary.cacheHitTokens());
+        }
+    }
+
+    @Test
+    void distinguishesProviderReportedZeroFromMissingUsageAndRecordsHttpFailureAsUnknown() throws Exception {
+        try (MockEndpoint endpoint = new MockEndpoint(200,
+                "{\"choices\":[{\"message\":{\"content\":\"zero\"}}],\"usage\":{"
+                        + "\"prompt_tokens\":0,\"completion_tokens\":0,\"total_tokens\":0}}",
+                new AtomicReference<>(), new AtomicReference<>())) {
+            ModelRequestTelemetry.beginTask("zero-run", "READ", 1);
+            LLMResponse response = endpoint.client(null).chat(List.of(Message.user("zero")));
+            ModelRequestUsageSummary summary = ModelRequestTelemetry.finishTask("zero-run");
+            assertTrue(response.providerUsage().usageAvailable());
+            assertEquals(0, response.providerUsage().inputTokens());
+            assertEquals(0, summary.totalTokens());
+            assertTrue(summary.usageComplete());
+        }
+        try (MockEndpoint endpoint = new MockEndpoint(429, "{\"error\":\"limited\"}",
+                new AtomicReference<>(), new AtomicReference<>())) {
+            ModelRequestTelemetry.beginTask("failed-run", "READ", 2);
+            assertThrows(IOException.class, () -> endpoint.client(null).chat(List.of(Message.user("fail"))));
+            ModelRequestUsageSummary summary = ModelRequestTelemetry.finishTask("failed-run");
+            assertEquals(1, summary.requests().size());
+            assertEquals("FAILED", summary.requests().get(0).status());
+            assertEquals(429, summary.requests().get(0).httpStatus());
+            assertFalse(summary.requests().get(0).usageAvailable());
+            assertNull(summary.totalTokens());
+            assertFalse(summary.usageComplete());
         }
     }
 
@@ -119,6 +185,11 @@ class OpenAiCompatibleClientTest {
         private OpenAiCompatibleClient client(String key) {
             return new OpenAiCompatibleClient("http://127.0.0.1:" + server.getAddress().getPort()
                     + "/v1/chat/completions", "test-model", key);
+        }
+
+        private OpenAiCompatibleClient deepSeekClient() {
+            return new OpenAiCompatibleClient("http://127.0.0.1:" + server.getAddress().getPort()
+                    + "/v1/chat/completions", "deepseek-flash", "test-key", null, true);
         }
 
         @Override

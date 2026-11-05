@@ -107,7 +107,8 @@ public final class CreateFileTool implements Tool {
         Map<String, Object> metadata = Map.of(
                 "path", path,
                 "changed", true,
-                "contentBytes", content.getBytes(StandardCharsets.UTF_8).length
+                "contentBytes", content.getBytes(StandardCharsets.UTF_8).length,
+                "versionAfter", FileVersion.sha256(content)
         );
         try {
             fileWriter.write(target, content);

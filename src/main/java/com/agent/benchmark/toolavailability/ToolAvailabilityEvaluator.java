@@ -9,6 +9,7 @@ import com.agent.tool.RunMavenTestTool;
 import com.agent.tool.execution.DefaultProcessRunner;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
+import com.agent.tool.execution.ProcessEnvironmentProfile;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -103,7 +104,8 @@ public final class ToolAvailabilityEvaluator {
                     Path source = safeResolve(workspace, relative);
                     ProcessExecutionResult result = processRunner.run(
                             List.of("javac", "-d", output.toString(), source.toString()),
-                            workspace, Duration.ofSeconds(30), 16 * 1024);
+                            workspace, Duration.ofSeconds(30), 16 * 1024, Map.of(),
+                            ProcessEnvironmentProfile.JAVA_TOOL);
                     if (result.timedOut()) return new Validation("UNAVAILABLE", "javac timed out", "VERIFIER_UNAVAILABLE");
                     if (result.exitCode() != 0) return new Validation("FAIL", null, null);
                 }

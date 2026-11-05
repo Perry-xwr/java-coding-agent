@@ -35,6 +35,18 @@ class MavenDiagnosticParserRegressionTest {
         assertFalse(diagnostic.summary().contains("���"));
     }
 
+    @Test
+    void classifiesDependencyAndBuildConfigurationFailuresWithoutCallingThemSourceErrors() {
+        assertEquals(DiagnosticType.DEPENDENCY,
+                parser.parse("[ERROR] Could not resolve dependencies for project x\n"
+                        + "[ERROR] Could not transfer artifact a:b:1 from/to central").type());
+        assertEquals(DiagnosticType.BUILD_CONFIGURATION,
+                parser.parse("[ERROR] Unknown lifecycle phase \"testt\"").type());
+        assertEquals(DiagnosticType.UNKNOWN,
+                parser.parse("[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0\n"
+                        + "[ERROR] example.Test.case -- NullPointerException").type());
+    }
+
     private static String resource(String name) throws IOException {
         try (var input = MavenDiagnosticParserRegressionTest.class
                 .getResourceAsStream("/diagnostics/" + name)) {

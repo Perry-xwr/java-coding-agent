@@ -6,12 +6,24 @@ import com.agent.tool.ToolResult;
 import com.agent.environment.verification.VerificationResult;
 import com.agent.environment.verification.VerificationStatus;
 import com.agent.environment.verification.VerificationCapability;
+import com.agent.agent.TaskChangeReview;
 
 import java.util.List;
 import java.nio.file.Path;
 
 /** Execution boundary used by an Agent to discover and invoke tools. */
 public interface AgentEnvironment {
+    /** Starts an in-memory task change capture. Non-filesystem environments return an empty review. */
+    default void beginTask(String runId) { }
+
+    /** Completes this task's read-only change capture. */
+    default TaskChangeReview finishTask(String runId, java.util.Map<String, String> verificationByPath) {
+        return TaskChangeReview.empty(runId);
+    }
+
+    /** Canonical workspace root when the environment is filesystem-backed. */
+    default Path workspaceRoot() { return null; }
+
     ToolResult execute(ToolCall toolCall);
 
     /** Returns the currently available model-facing tool definitions. */

@@ -31,6 +31,14 @@ class CliIntentRouterTest {
     }
 
     @Test
+    void routesExplicitWorkspaceCompilationChecksToCode() {
+        assertDecision("检查 HelloWorld.java 是否有编译错误", CliMode.CODE, RoutingConfidence.HIGH,
+                RoutingReason.WORKSPACE_VERIFICATION_REQUEST);
+        assertDecision("检查 HelloWorld.java 是否有编译错误，如果有请自动修复", CliMode.CODE,
+                RoutingConfidence.HIGH, RoutingReason.WORKSPACE_VERIFICATION_REQUEST);
+    }
+
+    @Test
     void givesCodePriorityWhenRequestAlsoNeedsReading() {
         assertDecision("读取 Calculator.java 并修复 add 方法", CliMode.CODE, RoutingConfidence.HIGH,
                 RoutingReason.EXPLICIT_MUTATION_TARGET);

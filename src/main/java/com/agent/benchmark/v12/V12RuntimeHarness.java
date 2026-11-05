@@ -10,7 +10,11 @@ import com.agent.RoutingConfidence;
 import com.agent.RoutingReason;
 import com.agent.agent.AgentRunResult;
 import com.agent.agent.AgentEventListener;
+import com.agent.agent.PlanningMode;
+import com.agent.environment.LocalWorkspaceEnvironment;
 import com.agent.llm.LLMClient;
+import com.agent.tool.ToolRegistry;
+import com.agent.tool.execution.DefaultProcessRunner;
 
 import java.nio.file.Path;
 import java.util.Objects;
@@ -28,12 +32,20 @@ public final class V12RuntimeHarness {
     private CliMode lastAutoRoute;
 
     public V12RuntimeHarness(LLMClient client, Path workspace) {
+        this(client, workspace, ToolRegistry.withCliCodingTools(workspace, new DefaultProcessRunner(),
+                Path.of(".m2/repository")));
+    }
+
+    V12RuntimeHarness(LLMClient client, Path workspace, ToolRegistry codingRegistry) {
         Objects.requireNonNull(client, "client must not be null");
+        Objects.requireNonNull(workspace, "workspace must not be null");
+        Objects.requireNonNull(codingRegistry, "codingRegistry must not be null");
         this.sessions = new CliSessions(
                 CliAgentFactory.createChat(client, workspace, AgentEventListener.NO_OP),
                 CliAgentFactory.createReadOnly(client, workspace, AgentEventListener.NO_OP),
-                CliAgentFactory.createCoding(client, workspace, AgentEventListener.NO_OP,
-                        Path.of(".m2/repository"))
+                CliAgentFactory.createCoding(client,
+                        new LocalWorkspaceEnvironment(workspace, codingRegistry),
+                        AgentEventListener.NO_OP, PlanningMode.REACTIVE)
         );
     }
 

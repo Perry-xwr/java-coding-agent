@@ -20,7 +20,7 @@ public final class CliIntentRouter {
     );
     private static final List<String> MUTATION_INTENTS = List.of(
             "修改", "修复", "修一下", "修掉", "改一下", "改清楚", "改成", "增加", "新增", "加一个", "删除",
-            "添加", "加入", "插入", "创建", "新建", "更新", "优化", "处理",
+            "添加", "加入", "插入", "创建", "新建", "编写", "更新", "优化", "处理",
             "edit", "fix", "implement", "create", "update", "delete",
             "add method", "add function"
     );
@@ -45,6 +45,7 @@ public final class CliIntentRouter {
     );
     private static final List<String> WORKSPACE_EXECUTION_SIGNALS = List.of(
             "运行 maven", "执行 maven", "运行测试", "执行测试", "测试当前项目",
+            "检查编译", "编译错误", "javac", "compile errors", "compilation errors",
             "run maven", "run tests", "execute tests"
     );
     private static final List<String> NO_MODIFICATION_CONSTRAINTS = List.of(
@@ -54,7 +55,7 @@ public final class CliIntentRouter {
             "创建文件", "新建文件", "create file"
     );
     private static final List<String> FILE_CREATION_ACTIONS = List.of(
-            "创建", "新建", "create"
+            "创建", "新建", "编写", "create"
     );
     private static final List<String> GENERIC_FILE_ADDITION_ACTIONS = List.of(
             "增加一个", "添加一个"
@@ -90,8 +91,14 @@ public final class CliIntentRouter {
         if (!workspaceReference && isGeneralTechnicalQuestion(normalized)) {
             return decision(CliMode.CHAT, RoutingConfidence.HIGH, RoutingReason.GENERAL_KNOWLEDGE);
         }
+        if (hasCompilationVerificationIntent(normalized) && (workspaceReference || explicitFileReference)) {
+            return decision(CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.WORKSPACE_VERIFICATION_REQUEST);
+        }
         if (mutationIntent && (workspaceReference || hasCodeTarget(normalized) || workspaceExecution)) {
             return decision(CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.EXPLICIT_MUTATION_TARGET);
+        }
+        if (workspaceExecution && (workspaceReference || explicitFileReference)) {
+            return decision(CliMode.CODE, RoutingConfidence.HIGH, RoutingReason.WORKSPACE_VERIFICATION_REQUEST);
         }
         if (explicitFileReference || hasNamedProjectFile(normalized)) {
             if (!mutationIntent && !hasReadIntent(normalized) && isGeneralKnowledgeFileQuestion(normalized)) {
@@ -174,6 +181,11 @@ public final class CliIntentRouter {
 
     private static boolean hasWorkspaceExecutionSignal(String message) {
         return containsAny(message, WORKSPACE_EXECUTION_SIGNALS);
+    }
+
+    private static boolean hasCompilationVerificationIntent(String message) {
+        return containsAny(message, List.of("检查编译", "编译错误", "javac", "compile errors",
+                "compilation errors", "检查是否能编译", "check compilation", "check if it compiles"));
     }
 
     private static boolean hasNoModificationConstraint(String message) {

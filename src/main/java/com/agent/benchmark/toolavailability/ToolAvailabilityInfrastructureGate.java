@@ -23,11 +23,22 @@ import java.util.Objects;
 /** Offline, deterministic validation of all initial fixtures before any provider can be created. */
 public final class ToolAvailabilityInfrastructureGate {
     private final ProcessRunner processRunner;
+    private final RegistryFactory registryFactory;
+
+    @FunctionalInterface
+    interface RegistryFactory {
+        ToolRegistry create(Path workspace, ProcessRunner runner, Path localRepository);
+    }
 
     public ToolAvailabilityInfrastructureGate() { this(new DefaultProcessRunner()); }
 
     ToolAvailabilityInfrastructureGate(ProcessRunner processRunner) {
+        this(processRunner, ToolRegistry::withCliCodingTools);
+    }
+
+    ToolAvailabilityInfrastructureGate(ProcessRunner processRunner, RegistryFactory registryFactory) {
         this.processRunner = Objects.requireNonNull(processRunner);
+        this.registryFactory = Objects.requireNonNull(registryFactory);
     }
 
     public Result check(List<ToolAvailabilityTask> tasks, Path fixturesRoot, Path localMavenRepository)
@@ -65,12 +76,28 @@ public final class ToolAvailabilityInfrastructureGate {
             if (!source.startsWith(workspace) || !Files.isRegularFile(source)) return "initial target missing: " + relative;
         }
         if (task.workspaceClass() == ToolAvailabilityWorkspaceClass.MAVEN_JAVA) {
-            ProcessRunner offline = (command, cwd, timeout, limit) -> {
-                List<String> localCommand = new ArrayList<>(command);
-                if (!localCommand.isEmpty()) localCommand.add(1, "-o");
-                return processRunner.run(List.copyOf(localCommand), cwd, timeout, limit);
+            ProcessRunner offline = new ProcessRunner() {
+                @Override
+                public ProcessExecutionResult run(List<String> command, Path cwd,
+                                                  java.time.Duration timeout, int limit)
+                        throws IOException, InterruptedException {
+                    return run(command, cwd, timeout, limit, java.util.Map.of(),
+                            com.agent.tool.execution.ProcessEnvironmentProfile.GENERAL);
+                }
+
+                @Override
+                public ProcessExecutionResult run(List<String> command, Path cwd,
+                                                  java.time.Duration timeout, int limit,
+                                                  java.util.Map<String, String> overrides,
+                                                  com.agent.tool.execution.ProcessEnvironmentProfile profile)
+                        throws IOException, InterruptedException {
+                    List<String> localCommand = new ArrayList<>(command);
+                    if (!localCommand.isEmpty()) localCommand.add(1, "-o");
+                    return processRunner.run(List.copyOf(localCommand), cwd, timeout, limit,
+                            overrides, profile);
+                }
             };
-            ToolRegistry registry = ToolRegistry.withCliCodingTools(workspace, offline, repository);
+            ToolRegistry registry = registryFactory.create(workspace, offline, repository);
             ToolResult result = registry.execute("run_maven_test", "{}");
             return result.success() ? null : "offline Maven test failed: " + safeMessage(result.errorMessage(), result.output());
         }

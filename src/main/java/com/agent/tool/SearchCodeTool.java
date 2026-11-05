@@ -23,6 +23,7 @@ public class SearchCodeTool {
         try (Stream<Path> paths = Files.walk(root)) {
             files = paths
                     .filter(Files::isRegularFile)
+                    .filter(path -> !WorkspacePathResolver.isPrivateRuntimePath(root, path))
                     .filter(path -> !isIgnored(path))
                     .sorted()
                     .toList();

@@ -2,7 +2,7 @@
 
 ## Model boundary
 
-`Agent` depends on `LLMClient`, not a provider class. `LlmClientFactory` reads and validates environment-backed configuration, then creates either the default GLM client or an OpenAI-compatible chat-completions adapter. Tool schemas and tool-call results are represented at the shared runtime boundary. GLM currently supports the CLI streaming path; the OpenAI-compatible adapter is non-streaming.
+`Agent` depends on `LLMClient`, not a provider class. `LlmClientFactory` reads and validates environment-backed configuration, then creates GLM, DeepSeek, or generic OpenAI-compatible clients. GLM implements the streaming interface. DeepSeek uses the shared OpenAI-compatible transport through a streaming facade and sends its non-thinking setting. Generic `openai-compatible` mode currently exposes the non-streaming path. All supported adapters parse structured tool calls; assistant prose that merely resembles JSON is not dispatched as a tool call. `MODEL_PROXY`, when set, configures the provider HTTP client.
 
 ## Environment and tool catalog
 
@@ -16,7 +16,11 @@ Tools return `ToolResult` values containing success, output or typed error, and 
 
 ## Working memory
 
-The interactive layer keeps bounded, session-scoped workspace context such as the active task, explicit target, discovered files, verified observations, typed failures, and last mutation. It supports short follow-ups and reduces context loss across mode/session turns. It is not persistent memory, semantic retrieval, or RAG. The `memory-v1` benchmark compares this structured condition with a legacy context condition; benchmark ablation modes should not be confused with an additional production memory service.
+The interactive layer keeps bounded, session-scoped workspace context such as the active task, explicit target, discovered files, verified observations, typed failures, and last mutation. It supports short follow-ups and reduces context loss across mode/session turns. This is not semantic retrieval, RAG, or a general long-term memory service. The CLI can manually save and restore the existing profile histories and working context in a versioned workspace-local snapshot; nothing is automatically saved. The `memory-v1` benchmark compares structured and legacy context conditions and should not be confused with a separate production memory service.
+
+Each provider request can carry server-reported token usage when present. `ModelRequestTelemetry` also records exact request payload byte size and message/tool counts. Missing usage stays unknown; payload bytes and character counts are not token estimates, and the CLI does not estimate currency cost.
+
+`RequestContextSelector` is a default-off, deterministic request-copy filter controlled by `AGENT_REQUEST_CONTEXT_MANAGEMENT_ENABLED=true` (or its JVM property). It may omit only exact duplicate older internal workspace-context messages and identical, successful, fully paired read-only discovery exchanges before the current turn. Original Agent history and saved snapshots remain intact. It is not general history compression; full file snapshots, edits, verification feedback, uncertain groups, and current-turn messages are preserved.
 
 ## Planning
 
@@ -24,7 +28,7 @@ The normal CODE profile defaults to `REACTIVE`. `PLAN_EXECUTE` adds a separate b
 
 ## Verification and repair
 
-Mutation success means text was written, not that the program is correct. After mutation, the runtime rereads affected content and invokes an applicable local verifier. Java in a Maven workspace uses controlled Maven verification; standalone Java and supported script/native languages use local syntax/compiler checks when available. Outcomes distinguish `PASS`, `FAIL`, `UNAVAILABLE`, and not-applicable cases. A verifier can only establish the checks it actually ran; it does not prove semantic correctness.
+Mutation success means text was written, not that the program is correct. After mutation, the runtime rereads affected content and invokes an applicable local verifier. Java in a Maven workspace uses controlled Maven verification when the file is within a known Maven source scope; standalone or out-of-scope Java uses temporary-output `javac` verification when the source scope can be established. Python, JavaScript, C, and C++ syntax checks depend on locally installed interpreters/compilers. Outcomes distinguish `PASS`, `FAIL`, `UNAVAILABLE`, and not-applicable cases. A verifier can only establish the checks it actually ran; it does not prove semantic correctness.
 
 When verification returns `FAIL`, guided repair produces a structured `RepairDirective` from the observed file and bounded diagnostics. The Agent must perform a fresh read before another repair mutation, and a recovery is counted only when a later verification passes. Recovery is bounded and does not provide transactional rollback; an invalid final workspace may remain after a failed run.
 

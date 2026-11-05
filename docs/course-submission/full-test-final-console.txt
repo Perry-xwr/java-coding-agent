@@ -1,0 +1,435 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.agent:agent-cli >-------------------------
+[INFO] Building agent-cli 0.1.0
+[INFO]   from pom-isolated-test.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ agent-cli ---
+[INFO] skip non existing resourceDirectory D:\Development\agent-cli\target\course-final-regression-2a3802f4\src\main\resources
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ agent-cli ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ agent-cli ---
+[INFO] Copying 2 resources from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ agent-cli ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ agent-cli ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.agent.agent.ActionCompletionGuardTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.473 s -- in com.agent.agent.ActionCompletionGuardTest
+[INFO] Running com.agent.agent.AdaptivePlanningIntegrationTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.049 s -- in com.agent.agent.AdaptivePlanningIntegrationTest
+[INFO] Running com.agent.agent.AdaptivePlanningRouterTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.agent.agent.AdaptivePlanningRouterTest
+[INFO] Running com.agent.agent.AgentPlanningTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.103 s -- in com.agent.agent.AgentPlanningTest
+[INFO] Running com.agent.agent.AgentProgressRepairPolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.agent.agent.AgentProgressRepairPolicyTest
+[INFO] Running com.agent.agent.AgentProgressVerificationTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.agent.agent.AgentProgressVerificationTest
+[INFO] Running com.agent.agent.AgentRequestContextManagementTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.344 s -- in com.agent.agent.AgentRequestContextManagementTest
+[INFO] Running com.agent.agent.AgentRequestUsageTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.211 s -- in com.agent.agent.AgentRequestUsageTest
+[INFO] Running com.agent.agent.AgentTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.053 s -- in com.agent.agent.AgentTest
+[INFO] Running com.agent.agent.AgentTrajectoryTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.028 s -- in com.agent.agent.AgentTrajectoryTest
+[INFO] Running com.agent.agent.ApplyContextPatchAgentFlowTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.125 s -- in com.agent.agent.ApplyContextPatchAgentFlowTest
+[INFO] Running com.agent.agent.CodingLoopIntegrationTest
+[WARNING] Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.001 s -- in com.agent.agent.CodingLoopIntegrationTest
+[INFO] Running com.agent.agent.CodingLoopTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.064 s -- in com.agent.agent.CodingLoopTest
+[INFO] Running com.agent.agent.CreateFileAgentFlowTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.agent.agent.CreateFileAgentFlowTest
+[INFO] Running com.agent.agent.DeterministicPostMutationRereadTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.068 s -- in com.agent.agent.DeterministicPostMutationRereadTest
+[INFO] Running com.agent.agent.DiagnosticRecoveryTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.097 s -- in com.agent.agent.DiagnosticRecoveryTest
+[INFO] Running com.agent.agent.EditReliabilityTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in com.agent.agent.EditReliabilityTest
+[INFO] Running com.agent.agent.GlmIntegrationTest
+[WARNING] Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0 s -- in com.agent.agent.GlmIntegrationTest
+[INFO] Running com.agent.agent.InsertAfterAgentFlowTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.145 s -- in com.agent.agent.InsertAfterAgentFlowTest
+[INFO] Running com.agent.agent.PlanningProgressTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.088 s -- in com.agent.agent.PlanningProgressTest
+[INFO] Running com.agent.agent.PostEditVerificationAgentTest
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.523 s -- in com.agent.agent.PostEditVerificationAgentTest
+[INFO] Running com.agent.agent.PostEditVerificationTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.076 s -- in com.agent.agent.PostEditVerificationTest
+[INFO] Running com.agent.agent.ProjectAwareCodingFlowTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.122 s -- in com.agent.agent.ProjectAwareCodingFlowTest
+[INFO] Running com.agent.agent.PythonVerificationAgentFlowTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.672 s -- in com.agent.agent.PythonVerificationAgentFlowTest
+[INFO] Running com.agent.agent.RepairFailureCategoryTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.agent.agent.RepairFailureCategoryTest
+[INFO] Running com.agent.agent.RequestContextSelectorTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.024 s -- in com.agent.agent.RequestContextSelectorTest
+[INFO] Running com.agent.agent.StreamingAgentLoopTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.agent.agent.StreamingAgentLoopTest
+[INFO] Running com.agent.agent.TaskDiffCollectorTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.097 s -- in com.agent.agent.TaskDiffCollectorTest
+[INFO] Running com.agent.agent.TaskEvidenceTest
+[INFO] Tests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.agent.agent.TaskEvidenceTest
+[INFO] Running com.agent.agent.WorkspaceChangeRequirementDetectorTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.agent.agent.WorkspaceChangeRequirementDetectorTest
+[INFO] Running com.agent.agent.WorkspaceMutationCompletionGuardTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.080 s -- in com.agent.agent.WorkspaceMutationCompletionGuardTest
+[INFO] Running com.agent.AgentManagedMemoryE2ETest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.051 s -- in com.agent.AgentManagedMemoryE2ETest
+[INFO] Running com.agent.AgentTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.agent.AgentTest
+[INFO] Running com.agent.AutomaticMemoryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.450 s -- in com.agent.AutomaticMemoryTest
+[INFO] Running com.agent.AutoMemoryFlowTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.822 s -- in com.agent.AutoMemoryFlowTest
+[INFO] Running com.agent.benchmark.adaptiveplanning.AdaptivePlanningBenchmarkMainTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.agent.benchmark.adaptiveplanning.AdaptivePlanningBenchmarkMainTest
+[INFO] Running com.agent.benchmark.adaptiveplanning.AdaptivePlanningBenchmarkProtocolTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.706 s -- in com.agent.benchmark.adaptiveplanning.AdaptivePlanningBenchmarkProtocolTest
+[INFO] Running com.agent.benchmark.adaptiveplanning.AdaptivePlanningRuntimeHarnessTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.256 s -- in com.agent.benchmark.adaptiveplanning.AdaptivePlanningRuntimeHarnessTest
+[INFO] Running com.agent.benchmark.BenchmarkFailureModesTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.065 s -- in com.agent.benchmark.BenchmarkFailureModesTest
+[INFO] Running com.agent.benchmark.BenchmarkPipelineTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.304 s -- in com.agent.benchmark.BenchmarkPipelineTest
+[INFO] Running com.agent.benchmark.editreliability.EditReliabilityBenchmarkProtocolTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.244 s -- in com.agent.benchmark.editreliability.EditReliabilityBenchmarkProtocolTest
+[INFO] Running com.agent.benchmark.EvaluatorSemanticsTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.077 s -- in com.agent.benchmark.EvaluatorSemanticsTest
+[INFO] Running com.agent.benchmark.memory.MemoryBenchmarkProtocolTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.agent.benchmark.memory.MemoryBenchmarkProtocolTest
+[INFO] Running com.agent.benchmark.memory.MemoryRuntimeHarnessTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.426 s -- in com.agent.benchmark.memory.MemoryRuntimeHarnessTest
+[INFO] Running com.agent.benchmark.planning.PlanningBenchmarkProtocolTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.052 s -- in com.agent.benchmark.planning.PlanningBenchmarkProtocolTest
+[INFO] Running com.agent.benchmark.planning.PlanningBenchmarkRunnerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.244 s -- in com.agent.benchmark.planning.PlanningBenchmarkRunnerTest
+[INFO] Running com.agent.benchmark.planning.PlanningRuntimeHarnessTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.178 s -- in com.agent.benchmark.planning.PlanningRuntimeHarnessTest
+[INFO] Running com.agent.benchmark.PlanningMetricsTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.agent.benchmark.PlanningMetricsTest
+[INFO] Running com.agent.benchmark.PreciseEditRecoveryTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.agent.benchmark.PreciseEditRecoveryTest
+[INFO] Running com.agent.benchmark.repairreliability.RepairReliabilityProtocolTest
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.375 s -- in com.agent.benchmark.repairreliability.RepairReliabilityProtocolTest
+[INFO] Running com.agent.benchmark.toolavailability.ToolAvailabilityBenchmarkProtocolTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.821 s -- in com.agent.benchmark.toolavailability.ToolAvailabilityBenchmarkProtocolTest
+[INFO] Running com.agent.benchmark.v12.V12BenchmarkProtocolTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.614 s -- in com.agent.benchmark.v12.V12BenchmarkProtocolTest
+[INFO] Running com.agent.benchmark.v12.V12ExecutionLayerTest
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.403 s -- in com.agent.benchmark.v12.V12ExecutionLayerTest
+[INFO] Running com.agent.CliAgentFactoryTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.167 s -- in com.agent.CliAgentFactoryTest
+[INFO] Running com.agent.CliIntentRouterTest
+[INFO] Tests run: 54, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.072 s -- in com.agent.CliIntentRouterTest
+[INFO] Running com.agent.ClipboardCopyTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.166 s -- in com.agent.ClipboardCopyTest
+[INFO] Running com.agent.CliSessionStoreTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.211 s -- in com.agent.CliSessionStoreTest
+[INFO] Running com.agent.CliWorkingContextTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.agent.CliWorkingContextTest
+[INFO] Running com.agent.ConsoleUiTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in com.agent.ConsoleUiTest
+[INFO] Running com.agent.CrossSessionMemoryInjectionTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.370 s -- in com.agent.CrossSessionMemoryInjectionTest
+[INFO] Running com.agent.CrossSessionMemoryTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.327 s -- in com.agent.CrossSessionMemoryTest
+[INFO] Running com.agent.D1MemoryDemoTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.743 s -- in com.agent.D1MemoryDemoTest
+[INFO] Running com.agent.DailyChatRecoveryTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.815 s -- in com.agent.DailyChatRecoveryTest
+[INFO] Running com.agent.DailyMemoryAcceptanceTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.140 s -- in com.agent.DailyMemoryAcceptanceTest
+[INFO] Running com.agent.DailyPasteTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.469 s -- in com.agent.DailyPasteTest
+[INFO] Running com.agent.DailyProviderDiagnosticsTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.324 s -- in com.agent.DailyProviderDiagnosticsTest
+[INFO] Running com.agent.DailyQuestionWriteSafetyTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.204 s -- in com.agent.DailyQuestionWriteSafetyTest
+[INFO] Running com.agent.DailyRuntimeTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.074 s -- in com.agent.DailyRuntimeTest
+[INFO] Running com.agent.DefaultCodeIntentTest
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.077 s -- in com.agent.DefaultCodeIntentTest
+[INFO] Running com.agent.diagnostics.LiveTestDiagnosticsTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.054 s -- in com.agent.diagnostics.LiveTestDiagnosticsTest
+[INFO] Running com.agent.environment.AgentEnvironmentTest
+[WARNING] Tests run: 9, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.120 s -- in com.agent.environment.AgentEnvironmentTest
+[INFO] Running com.agent.environment.EnvironmentToolAvailabilityTest
+[WARNING] Tests run: 9, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.482 s -- in com.agent.environment.EnvironmentToolAvailabilityTest
+[INFO] Running com.agent.environment.verification.PostEditVerificationServiceTest
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.332 s -- in com.agent.environment.verification.PostEditVerificationServiceTest
+[INFO] Running com.agent.environment.verification.VerificationDiagnosticParserTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.agent.environment.verification.VerificationDiagnosticParserTest
+[INFO] Running com.agent.execution.secure.SecureExecutionFoundationTest
+[WARNING] Tests run: 13, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.223 s -- in com.agent.execution.secure.SecureExecutionFoundationTest
+[INFO] Running com.agent.execution.secure.TuiMavenApprovalChannelTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.083 s -- in com.agent.execution.secure.TuiMavenApprovalChannelTest
+[INFO] Running com.agent.FinalApiP0Test
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.828 s -- in com.agent.FinalApiP0Test
+[INFO] Running com.agent.FinalApiPermissionStopTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.066 s -- in com.agent.FinalApiPermissionStopTest
+[INFO] Running com.agent.FinalApiWireTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.287 s -- in com.agent.FinalApiWireTest
+[INFO] Running com.agent.GlobalWorkspaceRegistryTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.195 s -- in com.agent.GlobalWorkspaceRegistryTest
+[INFO] Running com.agent.InteractiveCliSessionTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.890 s -- in com.agent.InteractiveCliSessionTest
+[INFO] Running com.agent.InteractiveCliTest
+Java Coding Agent
+Workspace: T:\junit5840693116829165350
+Provider: UNKNOWN (injected client)
+Model: UNKNOWN
+Mode: UNIFIED
+System > Session: New session (starts with first task) | Global Memory: OFF
+System > Left on empty input: sessions | /help | /exit
+[UNIFIED] You > System > Switched to AUTO mode.
+[AUTO] You > System > Session created: 10bf7b4c-a41c-4d40-bd92-bbf4d5c5fdd4
+System > AUTO -> READ
+[AUTO] You > System > AUTO -> CODE
+[AUTO] You > System > Goodbye.
+Java Coding Agent
+Workspace: T:\junit16024051728657849633
+Provider: UNKNOWN (injected client)
+Model: UNKNOWN
+Mode: UNIFIED
+System > Session: New session (starts with first task) | Global Memory: OFF
+System > Left on empty input: sessions | /help | /exit
+[UNIFIED] You > System > Session created: be135394-e4c8-4c68-9074-0f92ac3a618d
+[UNIFIED] You > System > Goodbye.
+Java Coding Agent
+Workspace: T:\junit9785070627031198225
+Provider: UNKNOWN (injected client)
+Model: UNKNOWN
+Mode: UNIFIED
+System > Session: New session (starts with first task) | Global Memory: OFF
+System > Left on empty input: sessions | /help | /exit
+[UNIFIED] You > System > Switched to AUTO mode.
+[AUTO] You > System > Session created: 55da3ec6-50d8-4eba-aaea-7a1a73c12d8e
+System > AUTO -> READ
+[AUTO] You > System > AUTO -> READ
+[AUTO] You > System > AUTO -> READ
+[AUTO] You > System > AUTO -> READ
+[AUTO] You > System > AUTO -> CHAT
+[AUTO] You > System > AUTO -> CHAT
+[AUTO] You > System > AUTO -> CODE
+[AUTO] You > System > AUTO -> CODE
+[AUTO] You > System > AUTO -> READ
+[AUTO] You > System > AUTO -> CODE
+[AUTO] You > System > AUTO -> READ
+[AUTO] You > System > AUTO -> CHAT
+[AUTO] You > System > AUTO -> CHAT
+[AUTO] You > System > Goodbye.
+Java Coding Agent
+Workspace: T:\junit5972831058381740939
+Provider: UNKNOWN (injected client)
+Model: UNKNOWN
+Mode: UNIFIED
+System > Session: New session (starts with first task) | Global Memory: OFF
+System > Left on empty input: sessions | /help | /exit
+[UNIFIED] You > System > Switched to AUTO mode.
+[AUTO] You > System > Session created: d502b458-43c9-49d1-abfe-ae678505105b
+System > AUTO -> READ
+[AUTO] You > System > Switched to CHAT mode.
+[CHAT] You > [CHAT] You > System > Switched to AUTO mode.
+[AUTO] You > System > AUTO -> CHAT
+[AUTO] You > System > Goodbye.
+Java Coding Agent
+Workspace: T:\junit16989353234851269950
+Provider: UNKNOWN (injected client)
+Model: UNKNOWN
+Mode: UNIFIED
+System > Session: New session (starts with first task) | Global Memory: OFF
+System > Left on empty input: sessions | /help | /exit
+[UNIFIED] You > System > Switched to AUTO mode.
+[AUTO] You > System > Session created: e3bd82fd-c4c0-49a2-8f31-5890c405a089
+System > AUTO -> READ
+[AUTO] You > System > AUTO -> CODE
+[AUTO] You > System > AUTO -> CHAT
+[AUTO] You > System > Goodbye.
+Java Coding Agent
+Workspace: T:\junit16991384509961202386
+Provider: UNKNOWN (injected client)
+Model: UNKNOWN
+Mode: UNIFIED
+System > Session: New session (starts with first task) | Global Memory: OFF
+System > Left on empty input: sessions | /help | /exit
+[UNIFIED] You > System > Switched to AUTO mode.
+[AUTO] You > System > Session created: 3223f610-73bc-4642-aab9-763ed7ff77e4
+System > AUTO -> READ
+[AUTO] You > System > AUTO -> READ
+[AUTO] You > System > Goodbye.
+[INFO] Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 9.193 s -- in com.agent.InteractiveCliTest
+[INFO] Running com.agent.llm.DailyProviderIsolationTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.agent.llm.DailyProviderIsolationTest
+[INFO] Running com.agent.llm.DeepSeekStreamingClientTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.130 s -- in com.agent.llm.DeepSeekStreamingClientTest
+[INFO] Running com.agent.llm.FinalApiNetworkGateTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.059 s -- in com.agent.llm.FinalApiNetworkGateTest
+[INFO] Running com.agent.llm.GlmProviderNetworkingTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.agent.llm.GlmProviderNetworkingTest
+[INFO] Running com.agent.llm.GlmStreamingClientTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.agent.llm.GlmStreamingClientTest
+[INFO] Running com.agent.llm.LiveTestControlTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.074 s -- in com.agent.llm.LiveTestControlTest
+[INFO] Running com.agent.llm.LlmClientFactoryTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in com.agent.llm.LlmClientFactoryTest
+[INFO] Running com.agent.llm.OpenAiCompatibleClientTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.044 s -- in com.agent.llm.OpenAiCompatibleClientTest
+[INFO] Running com.agent.LocalSessionSidebarTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.525 s -- in com.agent.LocalSessionSidebarTest
+[INFO] Running com.agent.ManagedConversationTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.196 s -- in com.agent.ManagedConversationTest
+[INFO] Running com.agent.memory.MemoryExtractorTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.agent.memory.MemoryExtractorTest
+[INFO] Running com.agent.memory.SessionContextMemoryTest
+M2_SYNTHETIC_LONG_CHAT fullEstimate=42720 selectedEstimate=7905 fullMessages=36 selectedHistoryMessages=8
+[INFO] Tests run: 21, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.904 s -- in com.agent.memory.SessionContextMemoryTest
+[INFO] Running com.agent.MemoryConflictTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.851 s -- in com.agent.MemoryConflictTest
+[INFO] Running com.agent.MemoryConsentTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.543 s -- in com.agent.MemoryConsentTest
+[INFO] Running com.agent.MemoryD3EvaluationTest
+[WARNING] Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.001 s -- in com.agent.MemoryD3EvaluationTest
+[INFO] Running com.agent.MemoryManagementTest
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.751 s -- in com.agent.MemoryManagementTest
+[INFO] Running com.agent.MemoryQualityTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 9.174 s -- in com.agent.MemoryQualityTest
+[INFO] Running com.agent.MemorySemanticV2Test
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.280 s -- in com.agent.MemorySemanticV2Test
+[INFO] Running com.agent.ProjectInstructionLoaderTest
+[WARNING] Tests run: 6, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.038 s -- in com.agent.ProjectInstructionLoaderTest
+[INFO] Running com.agent.RealAgentAdapterTest
+TUI5_THREE_TURN input=��� status=COMPLETED sequence=9 tools=1
+TUI5_THREE_TURN input=1 status=COMPLETED sequence=11 tools=2
+TUI5_THREE_TURN input=2 status=COMPLETED sequence=11 tools=2
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.768 s -- in com.agent.RealAgentAdapterTest
+[INFO] Running com.agent.SemanticMemoryTest
+M6B_FAKE_ONLY mode=keyword Hit@3=1/3 MRR=0.3333333333333333
+M6B_FAKE_ONLY mode=semantic Hit@3=3/3 MRR=1.0
+M6B_FAKE_ONLY mode=hybrid Hit@3=3/3 MRR=1.0
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.472 s -- in com.agent.SemanticMemoryTest
+[INFO] Running com.agent.SessionHistoryToolsTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.351 s -- in com.agent.SessionHistoryToolsTest
+[INFO] Running com.agent.SessionTrashTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.167 s -- in com.agent.SessionTrashTest
+[INFO] Running com.agent.SessionUiTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.272 s -- in com.agent.SessionUiTest
+[INFO] Running com.agent.TechnicalAnchorRetrievalTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.070 s -- in com.agent.TechnicalAnchorRetrievalTest
+[INFO] Running com.agent.tool.ApplyContextPatchToolTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.078 s -- in com.agent.tool.ApplyContextPatchToolTest
+[INFO] Running com.agent.tool.ApplyPatchToolTest
+[WARNING] Tests run: 10, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.055 s -- in com.agent.tool.ApplyPatchToolTest
+[INFO] Running com.agent.tool.CreateFileToolTest
+[WARNING] Tests run: 7, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.040 s -- in com.agent.tool.CreateFileToolTest
+[INFO] Running com.agent.tool.DiscoveryOutputPaginationTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.536 s -- in com.agent.tool.DiscoveryOutputPaginationTest
+[INFO] Running com.agent.tool.execution.DefaultProcessRunnerEncodingTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.123 s -- in com.agent.tool.execution.DefaultProcessRunnerEncodingTest
+[INFO] Running com.agent.tool.execution.ProcessEnvironmentPolicyTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.158 s -- in com.agent.tool.execution.ProcessEnvironmentPolicyTest
+[INFO] Running com.agent.tool.FindFilesToolTest
+[WARNING] Tests run: 6, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.292 s -- in com.agent.tool.FindFilesToolTest
+[INFO] Running com.agent.tool.InsertAfterToolTest
+[WARNING] Tests run: 6, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.038 s -- in com.agent.tool.InsertAfterToolTest
+[INFO] Running com.agent.tool.InsertBeforeToolTest
+[WARNING] Tests run: 6, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.028 s -- in com.agent.tool.InsertBeforeToolTest
+[INFO] Running com.agent.tool.ListFilesToolTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.agent.tool.ListFilesToolTest
+[INFO] Running com.agent.tool.MavenDiagnosticParserRegressionTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.agent.tool.MavenDiagnosticParserRegressionTest
+[INFO] Running com.agent.tool.MavenTestSummaryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.agent.tool.MavenTestSummaryTest
+[INFO] Running com.agent.tool.ReadFileToolTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.agent.tool.ReadFileToolTest
+[INFO] Running com.agent.tool.ReplaceLinesToolTest
+[WARNING] Tests run: 9, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.038 s -- in com.agent.tool.ReplaceLinesToolTest
+[INFO] Running com.agent.tool.RunMavenTestToolTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.029 s -- in com.agent.tool.RunMavenTestToolTest
+[INFO] Running com.agent.tool.SearchCodeToolTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.021 s -- in com.agent.tool.SearchCodeToolTest
+[INFO] Running com.agent.tool.SessionDataPrivacyTest
+[WARNING] Tests run: 2, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.017 s -- in com.agent.tool.SessionDataPrivacyTest
+[INFO] Running com.agent.tool.ToolRegistryTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in com.agent.tool.ToolRegistryTest
+[INFO] Running com.agent.tool.ToolResultTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.agent.tool.ToolResultTest
+[INFO] Running com.agent.tool.UnifiedCalculatorOfflineGateTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.076 s -- in com.agent.tool.UnifiedCalculatorOfflineGateTest
+[INFO] Running com.agent.tool.WorkspacePathResolverTest
+[WARNING] Tests run: 10, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.062 s -- in com.agent.tool.WorkspacePathResolverTest
+[INFO] Running com.agent.trajectory.TrajectoryJsonWriterTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.034 s -- in com.agent.trajectory.TrajectoryJsonWriterTest
+[INFO] Running com.agent.tui.prototype.DailyScrollTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.527 s -- in com.agent.tui.prototype.DailyScrollTest
+[INFO] Running com.agent.tui.prototype.DailyTerminalFlowTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.600 s -- in com.agent.tui.prototype.DailyTerminalFlowTest
+[INFO] Running com.agent.tui.prototype.FinalApiInputFlowTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.698 s -- in com.agent.tui.prototype.FinalApiInputFlowTest
+[INFO] Running com.agent.tui.prototype.FinalApiPreconfirmTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.111 s -- in com.agent.tui.prototype.FinalApiPreconfirmTest
+[INFO] Running com.agent.tui.prototype.NativePasteDiagnosticTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.477 s -- in com.agent.tui.prototype.NativePasteDiagnosticTest
+[INFO] Running com.agent.tui.prototype.Tui2TerminalFlowTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.418 s -- in com.agent.tui.prototype.Tui2TerminalFlowTest
+[INFO] Running com.agent.tui.prototype.Tui3TerminalFlowTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.468 s -- in com.agent.tui.prototype.Tui3TerminalFlowTest
+[INFO] Running com.agent.tui.prototype.Tui4TerminalFlowTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.896 s -- in com.agent.tui.prototype.Tui4TerminalFlowTest
+[INFO] Running com.agent.tui.prototype.Tui5PresentationTest
+TUI5_RENDER_FIXTURE messages=10000 repeatedFrames=100 rewrappedBeforeResize=0 initialMs=100 repeatMs=20
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.216 s -- in com.agent.tui.prototype.Tui5PresentationTest
+[INFO] Running com.agent.tui.prototype.TuiPrototypeTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.024 s -- in com.agent.tui.prototype.TuiPrototypeTest
+[INFO] Running com.agent.tui.prototype.TuiVisualPolishTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.agent.tui.prototype.TuiVisualPolishTest
+[INFO] Running com.agent.tui.prototype.WindowsVtInputModeTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.agent.tui.prototype.WindowsVtInputModeTest
+[INFO] Running com.agent.tui.runtime.TuiApprovalGateTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.agent.tui.runtime.TuiApprovalGateTest
+[INFO] Running com.agent.tui.runtime.UiEventLoopTest
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.948 s -- in com.agent.tui.runtime.UiEventLoopTest
+[INFO] Running com.agent.Tui4BControlledMavenTest
+[WARNING] Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0 s -- in com.agent.Tui4BControlledMavenTest
+[INFO] Running com.agent.Tui4BExecutionTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.568 s -- in com.agent.Tui4BExecutionTest
+[INFO] Running com.agent.Tui4BKeyboardTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.568 s -- in com.agent.Tui4BKeyboardTest
+[INFO] Running com.agent.Tui5TerminalFlowTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.359 s -- in com.agent.Tui5TerminalFlowTest
+[INFO] Running com.agent.TuiMemoryIntegrationTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.043 s -- in com.agent.TuiMemoryIntegrationTest
+[INFO] Running com.agent.TuiSessionControllerTest
+TUI2_FAILED category=SESSION_OPERATION_OR_SAVE_ERROR; data retained; no automatic retry
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.191 s -- in com.agent.TuiSessionControllerTest
+[INFO] Running com.agent.Ui2InteractionTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.203 s -- in com.agent.Ui2InteractionTest
+[INFO] Running com.agent.validation.D2GateTest
+CONDITION=GLOBAL_OFF; contextGate=PASS; usage=ProviderTokenUsage[inputTokens=null, outputTokens=null, totalTokens=null, cacheHitTokens=null, cacheMissTokens=null, usageAvailable=false]; currencyCost=UNKNOWN
+CONDITION=GLOBAL_ON_JAVA17; contextGate=PASS; usage=ProviderTokenUsage[inputTokens=null, outputTokens=null, totalTokens=null, cacheHitTokens=null, cacheMissTokens=null, usageAvailable=false]; currencyCost=UNKNOWN
+CONDITION=GLOBAL_ON_JAVA21; contextGate=PASS; usage=ProviderTokenUsage[inputTokens=null, outputTokens=null, totalTokens=null, cacheHitTokens=null, cacheMissTokens=null, usageAvailable=false]; currencyCost=UNKNOWN
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.439 s -- in com.agent.validation.D2GateTest
+[INFO] Running com.agent.WorkspaceIntentConsistencyE2ETest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.435 s -- in com.agent.WorkspaceIntentConsistencyE2ETest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[WARNING] Tests run: 1035, Failures: 0, Errors: 0, Skipped: 16
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  02:00 min
+[INFO] Finished at: 2026-11-05T20:16:04+08:00
+[INFO] ------------------------------------------------------------------------

@@ -74,7 +74,7 @@ final class LiteralInsertionSupport {
         }
 
         int matchCount = countOccurrences(original, anchor);
-        Map<String, Object> metadata = metadata(path, false, original.length(), original.length(), matchCount);
+        Map<String, Object> metadata = metadata(path, false, original, original, matchCount);
         if (matchCount == 0) {
             return ToolResult.failure(ToolErrorCode.TEXT_NOT_FOUND, "anchor was not found in: " + path, metadata);
         }
@@ -89,7 +89,7 @@ final class LiteralInsertionSupport {
                 : original.substring(0, anchorIndex + anchor.length()) + content
                 + original.substring(anchorIndex + anchor.length());
         boolean changed = !updated.equals(original);
-        Map<String, Object> successMetadata = metadata(path, changed, original.length(), updated.length(), matchCount);
+        Map<String, Object> successMetadata = metadata(path, changed, original, updated, matchCount);
         if (!changed) {
             return ToolResult.failure(ToolErrorCode.NO_EFFECT_CHANGE,
                     "Insertion made no content change: " + path, successMetadata);
@@ -146,14 +146,16 @@ final class LiteralInsertionSupport {
     }
 
     private static Map<String, Object> metadata(
-            String path, boolean changed, int oldLength, int newLength, int matchCount
+            String path, boolean changed, String original, String updated, int matchCount
     ) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("path", path);
         metadata.put("changed", changed);
-        metadata.put("oldLength", oldLength);
-        metadata.put("newLength", newLength);
+        metadata.put("oldLength", original.length());
+        metadata.put("newLength", updated.length());
         metadata.put("matchCount", matchCount);
+        metadata.put("versionBefore", FileVersion.sha256(original));
+        metadata.put("versionAfter", FileVersion.sha256(updated));
         return metadata;
     }
 

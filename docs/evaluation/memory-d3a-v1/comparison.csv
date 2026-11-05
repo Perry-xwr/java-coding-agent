@@ -1,0 +1,13 @@
+﻿案例,评价标准,改进前结果,修改内容,改进后结果,结论
+F01 Java version exact,Retrieve and inject relevant authorized current memory; no irrelevant entries,PASS; retrieved=['java']; injected=['java'],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=['java']; injected=['java'],保持通过
+F02 Build tool exact,Retrieve and inject relevant authorized current memory; no irrelevant entries,PASS; retrieved=['maven']; injected=['maven'],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=['maven']; injected=['maven'],保持通过
+F03 Test tool exact,Retrieve and inject relevant authorized current memory; no irrelevant entries,PASS; retrieved=['junit']; injected=['junit'],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=['junit']; injected=['junit'],保持通过
+P01 JDK paraphrase,Retrieve and inject relevant authorized current memory; no irrelevant entries,FAIL; retrieved=[]; injected=[],统一完整标识符阈值保底（所有案例使用同一实现）,FAIL; retrieved=[]; injected=[],未改善
+P02 Chinese build-tool paraphrase,Retrieve and inject relevant authorized current memory; no irrelevant entries,FAIL; retrieved=[]; injected=[],统一完整标识符阈值保底（所有案例使用同一实现）,FAIL; retrieved=[]; injected=[],未改善
+P03 Verbose explicit technical topic,Retrieve and inject relevant authorized current memory; no irrelevant entries,FAIL; retrieved=[]; injected=[],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=['java']; injected=['java'],改善
+N01 Global OFF,No shared injection,PASS; retrieved=[]; injected=[],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=[]; injected=[],保持通过
+N02 Unrelated query,No shared injection,PASS; retrieved=[]; injected=[],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=[]; injected=[],保持通过
+N03 Foreign workspace scope,No shared injection,PASS; retrieved=[]; injected=[],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=[]; injected=[],保持通过
+V01 Update selects current version,Retrieve and inject relevant authorized current memory; no irrelevant entries,PASS; retrieved=['java']; injected=['java'],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=['java']; injected=['java'],保持通过
+V02 Deleted entry absent,No shared injection,PASS; retrieved=[]; injected=[],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=[]; injected=[],保持通过
+V03 Stale replacement refused,Retrieve and inject relevant authorized current memory; no irrelevant entries,PASS; retrieved=['java']; injected=['java'],统一完整标识符阈值保底（所有案例使用同一实现）,PASS; retrieved=['java']; injected=['java'],保持通过

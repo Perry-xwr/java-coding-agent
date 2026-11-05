@@ -151,7 +151,7 @@ class PostEditVerificationTest {
                         answer("Done."),
                         answer("The change was written and reread, but Maven could not start.")
                 )),
-                ToolRegistry.withCliCodingTools(
+                com.agent.tool.TestingToolRegistries.withCliCodingTools(
                         workspace, unavailable, workspace.resolve(".m2/repository")
                 ),
                 "post-edit verification test",
@@ -169,7 +169,7 @@ class PostEditVerificationTest {
     private Agent agent(List<LLMResponse> responses, List<ProcessExecutionResult> processResults) {
         return new Agent(
                 fake(responses),
-                ToolRegistry.withCliCodingTools(
+                com.agent.tool.TestingToolRegistries.withCliCodingTools(
                         workspace,
                         new QueueRunner(processResults),
                         workspace.resolve(".m2/repository")
@@ -223,11 +223,14 @@ class PostEditVerificationTest {
     }
 
     private static ProcessExecutionResult passed() {
-        return new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 2);
+        return new ProcessExecutionResult(0, false,
+                "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 2);
     }
 
     private static ProcessExecutionResult failed() {
-        return new ProcessExecutionResult(1, false, "Tests run: 1, Failures: 1", false, 2);
+        return new ProcessExecutionResult(1, false,
+                "Tests run: 1, Failures: 1, Errors: 0, Skipped: 0\n" +
+                        "[ERROR] AppTest.add -- expected: <2> but was: <1>", false, 2);
     }
 
     private static final class QueueRunner implements ProcessRunner {

@@ -54,10 +54,39 @@ class InteractiveCliTest {
         assertEquals(0, calls.get());
         String text = output.toString(StandardCharsets.UTF_8).replace("\r\n", "\n");
         assertTrue(text.contains("Java Coding Agent"));
-        assertTrue(text.contains("Mode: AUTO"));
-        assertFalse(text.contains("[AUTO] You > [AUTO] You > "));
-        assertTrue(text.contains("[AUTO] You > \n[AUTO] You > "));
+        assertTrue(text.contains("Mode: UNIFIED"));
+        assertFalse(text.contains("[UNIFIED] You > [UNIFIED] You > "));
+        assertTrue(text.contains("[UNIFIED] You > \n[UNIFIED] You > "));
         assertTrue(text.contains("System > Goodbye."));
+    }
+
+    @Test
+    void diffCommandIsAvailableWithoutStartingAnAgentTurn() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        CapturedCli captured = capturedCli(countingClient(calls));
+        captured.cli().run(new BufferedReader(new StringReader("/diff\n/exit\n")));
+        assertEquals(0, calls.get());
+        assertTrue(captured.text().contains("No captured file changes in the latest task."));
+    }
+
+    @Test
+    void providerFailureShowsActualSanitizedLlmErrorInsteadOfGenericMessage() throws Exception {
+        LLMClient llm = new LLMClient() {
+            @Override
+            public LLMResponse chat(List<Message> messages) throws IOException {
+                throw new IOException("GLM HTTP provider error 429");
+            }
+        };
+        CliSessions sessions = CliAgentFactory.createProfiles(llm, workspace, AgentEventListener.NO_OP);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        InteractiveCli cli = new InteractiveCli(sessions,
+                new ConsoleUi(new PrintStream(output, true, StandardCharsets.UTF_8)), workspace);
+
+        cli.run(new BufferedReader(new StringReader("Java 和 C++ 有什么区别\n/exit\n")));
+
+        String text = output.toString(StandardCharsets.UTF_8);
+        assertTrue(text.contains("LLM streaming failed: GLM HTTP provider error 429"), text);
+        assertFalse(text.contains("LLM streaming failed: LLM request failed"), text);
     }
 
     @Test
@@ -74,10 +103,10 @@ class InteractiveCliTest {
         String text = captured.text();
         assertTrue(text.contains("System > Switched to CHAT mode."));
         assertTrue(text.contains("System > Switched to READ mode."));
-        assertTrue(text.contains("System > Switched to CODE mode."));
+        assertTrue(text.contains("System > Switched to UNIFIED mode (/code compatibility alias)."));
         assertTrue(text.contains("System > Switched to AUTO mode."));
         assertTrue(text.contains("[AUTO] You >"));
-        assertTrue(text.contains("/chat   General conversation"));
+        assertTrue(text.contains("/auto     Legacy per-task CHAT/READ/CODE routing"));
     }
 
     @Test
@@ -93,7 +122,7 @@ class InteractiveCliTest {
         String text = captured.text();
         assertTrue(text.contains("[CHAT] You >"));
         assertTrue(text.contains("[READ] You >"));
-        assertTrue(text.contains("[CODE] You >"));
+        assertTrue(text.contains("[UNIFIED] You >"));
         assertTrue(text.contains("Agent >"));
         assertTrue(text.contains("answer"));
     }
@@ -126,45 +155,106 @@ class InteractiveCliTest {
     }
 
     @Test
-    void defaultAutoRoutesGeneralQuestionToChatSession() throws Exception {
-        AtomicInteger chatCalls = new AtomicInteger();
-        AtomicInteger readCalls = new AtomicInteger();
-        AtomicInteger codeCalls = new AtomicInteger();
-        CliSessions sessions = new CliSessions(
-                simpleAgent(countingClient(chatCalls)),
-                simpleAgent(countingClient(readCalls)),
-                simpleAgent(countingClient(codeCalls))
-        );
+    void defaultUnifiedAgentAnswersGeneralQuestionWithoutRoutingOrTools() throws Exception {
+        ToolCapturingClient client = new ToolCapturingClient();
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ConsoleUi ui = new ConsoleUi(new PrintStream(output, true, StandardCharsets.UTF_8));
-        InteractiveCli cli = new InteractiveCli(sessions, ui, workspace);
+        InteractiveCli cli = new InteractiveCli(CliAgentFactory.createProfiles(client, workspace, ui), ui, workspace);
 
         cli.run(new BufferedReader(new StringReader("Java 和 C++ 有什么区别\n/exit\n")));
 
-        assertEquals(1, chatCalls.get());
-        assertEquals(0, readCalls.get());
-        assertEquals(0, codeCalls.get());
+        assertTrue(client.calls > 0);
+        assertTrue(client.toolNames.contains("read_file"));
+        assertTrue(client.toolNames.contains("apply_context_patch"));
         String text = output.toString(StandardCharsets.UTF_8);
-        assertTrue(text.contains("Mode: AUTO"));
-        assertTrue(text.contains("[AUTO] You >"));
-        assertTrue(text.contains("System > AUTO -> CHAT"));
+        assertTrue(text.contains("Mode: UNIFIED"));
+        assertTrue(text.contains("[UNIFIED] You >"));
+        assertFalse(text.contains("AUTO ->"));
+        assertFalse(text.contains("Tool >"), "a direct question need not call tools or scan the workspace");
+        assertFalse(text.contains("System > Task evidence:"), "successful normal chat is quiet by default");
     }
 
     @Test
-    void adaptivePlanningConfigurationIsShownAtStartup() throws Exception {
+    void originalCalculatorRepairRequestEntersUnifiedProfileWithReadEditAndApprovedTestTools() throws Exception {
+        Files.writeString(workspace.resolve("pom.xml"), "<project><modelVersion>4.0.0</modelVersion></project>");
+        ToolCapturingClient client = new ToolCapturingClient();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ConsoleUi ui = new ConsoleUi(new PrintStream(output, true, StandardCharsets.UTF_8));
+        CliSessions sessions = CliAgentFactory.createProfiles(client, workspace, ui);
+        InteractiveCli cli = new InteractiveCli(sessions, ui, workspace);
+        String task = "请检查当前 Java Maven 项目中的 Calculator.add(int,int) 功能。先阅读相关源码和测试，"
+                + "通过已有受控测试工具确认失败原因，再修复实现代码。不要修改、删除或跳过测试，"
+                + "不要改变 Maven 配置。修复完成后通过测试验证，并如实报告结果。";
+
+        cli.run(new BufferedReader(new StringReader(task + "\n/exit\n")));
+
+        ToolCapturingClient codeAliasClient = new ToolCapturingClient();
+        ConsoleUi aliasUi = new ConsoleUi(new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8));
+        InteractiveCli codeAlias = new InteractiveCli(
+                CliAgentFactory.createProfiles(codeAliasClient, workspace, aliasUi), aliasUi, workspace);
+        codeAlias.run(new BufferedReader(new StringReader("/code\n" + task + "\n/exit\n")));
+
+        assertEquals(codeAliasClient.calls, client.calls,
+                "default path adds no routing/classification request relative to the /code alias");
+        assertTrue(client.toolNames.contains("read_file"));
+        assertTrue(client.toolNames.contains("apply_context_patch"));
+        assertTrue(client.toolNames.contains("run_maven_test"));
+        assertTrue(client.messages.stream().anyMatch(message -> "user".equals(message.role())
+                && task.equals(message.content())));
+        assertFalse(output.toString(StandardCharsets.UTF_8).contains("AUTO ->"));
+    }
+
+    @Test
+    void liveTestAllowsExactlyTwoCompletedTurnsOnlyWhenExplicitlyEnabledAndKeepsHistory() throws Exception {
+        String previousLiveMode = System.getProperty("agent.live-test-mode");
+        String previousDiagnostics = System.getProperty("agent.live-test-diagnostics");
+        String previousTwoTurnMode = System.getProperty("agent.live-test-two-turn-mode");
+        System.setProperty("agent.live-test-mode", "true");
+        System.setProperty("agent.live-test-diagnostics", "false");
+        System.clearProperty("agent.live-test-two-turn-mode");
+        try {
+            CapturingClient client = new CapturingClient();
+            CapturedCli singleTurn = capturedCli(client);
+            singleTurn.cli().run(new DelayedBufferedReader(
+                    List.of("/chat", "What is Java?", "Tell me more about it", "/exit"),
+                    List.of(0L, 250L, 550L, 850L)
+            ));
+            assertEquals(1, client.calls.get(), "default live-test mode remains single-turn");
+
+            System.setProperty("agent.live-test-two-turn-mode", "true");
+            CapturedCli twoTurn = capturedCli(client);
+            twoTurn.cli().run(new DelayedBufferedReader(
+                    List.of("/chat", "What is Java?", "Tell me more about it", "/code",
+                            "This third task must not run", "/exit"),
+                    List.of(0L, 250L, 550L, 850L, 1_100L, 1_400L)
+            ));
+
+            assertEquals(3, client.calls.get(), "the opt-in process admits exactly two additional turns");
+            assertEquals(List.of("What is Java?", "Tell me more about it"),
+                    client.historySnapshots.get(2), "second turn sees first-turn conversation history");
+            assertTrue(twoTurn.text().contains("LIVE_TEST_TURN_1_COMPLETE"));
+        } finally {
+            restoreSystemProperty("agent.live-test-mode", previousLiveMode);
+            restoreSystemProperty("agent.live-test-diagnostics", previousDiagnostics);
+            restoreSystemProperty("agent.live-test-two-turn-mode", previousTwoTurnMode);
+        }
+    }
+
+    @Test
+    void adaptivePlanningConfigurationIsAvailableInVerboseDetails() throws Exception {
         LLMClient llm = countingClient(new AtomicInteger());
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ConsoleUi ui = new ConsoleUi(new PrintStream(output, true, StandardCharsets.UTF_8));
         CliSessions sessions = CliAgentFactory.createProfiles(
                 llm, workspace, ui, PlanningMode.ADAPTIVE);
 
-        new InteractiveCli(sessions, ui, workspace).run(new BufferedReader(new StringReader("/exit\n")));
+        new InteractiveCli(sessions, ui, workspace).run(new BufferedReader(new StringReader("/verbose on\nWhat is Java?\n/exit\n")));
 
         assertTrue(output.toString(StandardCharsets.UTF_8).contains("Planning: ADAPTIVE"));
     }
 
     @Test
-    void defaultAutoRoutesGenericCppFileMutationToCodeSession() throws Exception {
+    void defaultUnifiedAgentRoutesGenericCppMutationToExistingCodeProfile() throws Exception {
         AtomicInteger chatCalls = new AtomicInteger();
         AtomicInteger readCalls = new AtomicInteger();
         AtomicInteger codeCalls = new AtomicInteger();
@@ -188,6 +278,7 @@ class InteractiveCliTest {
 
         cli.run(new DelayedBufferedReader(
                 List.of(
+                        "/auto",
                         "读取当前目录的 Python 文件",
                         "是的",
                         "读你刚刚找到的Python文件",
@@ -204,8 +295,8 @@ class InteractiveCliTest {
                         "/exit"
                 ),
                 List.of(
-                        0L, 250L, 500L, 750L, 1_000L, 1_250L, 1_500L,
-                        1_750L, 2_000L, 2_250L, 2_500L, 2_750L, 3_000L, 3_250L
+                        0L, 250L, 500L, 750L, 1_000L, 1_250L, 1_500L, 1_750L,
+                        2_000L, 2_250L, 2_500L, 2_750L, 3_000L, 3_250L, 3_500L
                 )
         ));
 
@@ -222,7 +313,7 @@ class InteractiveCliTest {
         InteractiveCli cli = cliWithIndependentSessions(chatCalls, readCalls, codeCalls);
 
         cli.run(new BufferedReader(new StringReader(
-                "读取 README.md\n/chat\n是的\n/auto\n继续\n/exit\n"
+                "/auto\n读取 README.md\n/chat\n是的\n/auto\n继续\n/exit\n"
         )));
 
         assertEquals(1, readCalls.get());
@@ -238,18 +329,23 @@ class InteractiveCliTest {
                 response("found hello.cpp")
         ));
         CapturingClient codeClient = new CapturingClient();
-        InteractiveCli cli = cli(readAgent(readClient), simpleAgent(countingClient(new AtomicInteger())),
-                simpleAgent(codeClient));
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ConsoleUi ui = new ConsoleUi(new PrintStream(output, true, StandardCharsets.UTF_8));
+        CliSessions sessions = new CliSessions(simpleAgent(countingClient(new AtomicInteger())),
+                readAgent(readClient), simpleAgent(codeClient));
+        InteractiveCli cli = new InteractiveCli(sessions, ui, workspace);
 
         cli.run(new DelayedBufferedReader(
-                List.of("找所有 cpp 文件", "在这个 cpp 文件里添加 subtract 函数", "/exit"),
-                List.of(0L, 250L, 500L)
+                List.of("/auto", "找所有 cpp 文件", "在这个 cpp 文件里添加 subtract 函数", "/exit"),
+                List.of(0L, 250L, 500L, 750L)
         ));
 
         String task = codeClient.userTasks().get(0);
-        assertTrue(task.contains("Working memory:"));
-        assertTrue(task.contains("Current candidates: hello.cpp"));
-        assertTrue(task.endsWith("User request:\n在这个 cpp 文件里添加 subtract 函数"));
+        assertEquals("在这个 cpp 文件里添加 subtract 函数", task);
+        assertTrue(codeClient.internalContext().contains("Working memory:"), codeClient.internalContext());
+        assertTrue(codeClient.internalContext().contains("Current candidates: hello.cpp"));
+        assertFalse(task.contains("Working memory:"));
+        assertFalse(output.toString(StandardCharsets.UTF_8).contains("Working memory:"));
     }
 
     @Test
@@ -264,15 +360,16 @@ class InteractiveCliTest {
                 simpleAgent(countingClient(new AtomicInteger())));
 
         cli.run(new DelayedBufferedReader(
-                List.of("找所有 Python 文件", "读这个文件", "/exit"),
-                List.of(0L, 250L, 500L)
+                List.of("/auto", "找所有 Python 文件", "读这个文件", "/exit"),
+                List.of(0L, 250L, 500L, 750L)
         ));
 
         assertEquals("找所有 Python 文件", readClient.userTasks().get(0));
         String handoff = readClient.userTasks().get(1);
-        assertTrue(handoff.contains("Working memory:"));
-        assertTrue(handoff.contains("Current candidates: a.py"));
-        assertTrue(handoff.endsWith("User request:\n读这个文件"));
+        assertEquals("读这个文件", handoff);
+        assertTrue(readClient.internalContext().contains("Working memory:"));
+        assertTrue(readClient.internalContext().contains("Current candidates: a.py"));
+        assertFalse(handoff.contains("Working memory:"));
     }
 
     @Test
@@ -288,13 +385,14 @@ class InteractiveCliTest {
                 simpleAgent(codeClient));
 
         cli.run(new DelayedBufferedReader(
-                List.of("找所有 cpp 文件", "修改这个文件", "/exit"),
-                List.of(0L, 250L, 500L)
+                List.of("/auto", "找所有 cpp 文件", "修改这个文件", "/exit"),
+                List.of(0L, 250L, 500L, 750L)
         ));
 
         String task = codeClient.userTasks().get(0);
-        assertTrue(task.contains("Current candidates: a.cpp, b.cpp"));
-        assertTrue(task.contains("Do not choose a candidate arbitrarily"));
+        assertEquals("修改这个文件", task);
+        assertTrue(codeClient.internalContext().contains("Current candidates: a.cpp, b.cpp"));
+        assertTrue(codeClient.internalContext().contains("Do not choose a candidate arbitrarily"));
         assertFalse(task.contains("resolved the referenced file to"));
     }
 
@@ -310,13 +408,13 @@ class InteractiveCliTest {
         InteractiveCli cli = cli(readAgent(readClient), simpleAgent(countingClient(chatCalls)), simpleAgent(codeClient));
 
         cli.run(new DelayedBufferedReader(
-                List.of("找所有 cpp 文件", "修改 README.md", "Java 和 C++ 有什么区别", "/exit"),
-                List.of(0L, 250L, 500L, 750L)
+                List.of("/auto", "找所有 cpp 文件", "修改 README.md", "Java 和 C++ 有什么区别", "/exit"),
+                List.of(0L, 250L, 500L, 750L, 1_000L)
         ));
 
         String codeTask = codeClient.userTasks().get(0);
-        assertTrue(codeTask.contains("Explicit target: README.md"));
-        assertTrue(codeTask.endsWith("User request:\n修改 README.md"));
+        assertEquals("修改 README.md", codeTask);
+        assertTrue(codeClient.internalContext().contains("Explicit target: README.md"));
         assertEquals(1, chatCalls.get());
     }
 
@@ -327,7 +425,7 @@ class InteractiveCliTest {
 
         captured.cli().run(new BufferedReader(new StringReader("hello\n/exit\n")));
 
-        assertEquals(1, llm.calls.get());
+        assertEquals(List.of("hello"), llm.userTasks(), "the line is submitted as one user turn");
         assertEquals(List.of("hello"), llm.userTasks());
     }
 
@@ -410,7 +508,7 @@ class InteractiveCliTest {
         captured.cli().run(new BufferedReader(new StringReader("\n/exit\n")));
 
         assertEquals(0, llm.calls.get());
-        assertFalse(captured.text().contains("[AUTO] You > [AUTO] You > "));
+        assertFalse(captured.text().contains("[UNIFIED] You > [UNIFIED] You > "));
     }
 
     private CapturedCli capturedCli(LLMClient llm) {
@@ -466,25 +564,63 @@ class InteractiveCliTest {
     private static final class CapturingClient implements LLMClient {
         private final AtomicInteger calls = new AtomicInteger();
         private final AtomicReference<List<String>> latestUserTasks = new AtomicReference<>(List.of());
+        private final AtomicReference<String> latestInternalContext = new AtomicReference<>("");
+        private final List<List<String>> historySnapshots = new java.util.ArrayList<>();
 
         @Override
         public LLMResponse chat(List<Message> messages) {
             calls.incrementAndGet();
-            latestUserTasks.set(messages.stream()
+            List<String> userTasks = messages.stream()
                     .filter(message -> message.role().equals("user"))
                     .map(Message::content)
-                    .toList());
+                    .toList();
+            latestUserTasks.set(userTasks);
+            historySnapshots.add(userTasks);
+            latestInternalContext.set(messages.stream()
+                    .filter(message -> message.role().equals("system"))
+                    .map(Message::content)
+                    .filter(content -> content.startsWith("INTERNAL WORKSPACE CONTEXT"))
+                    .reduce((left, right) -> right).orElse(""));
             return new LLMResponse("answer", List.of());
         }
 
         private List<String> userTasks() {
             return latestUserTasks.get();
         }
+
+        private String internalContext() {
+            return latestInternalContext.get();
+        }
+    }
+
+    private static final class ToolCapturingClient implements LLMClient {
+        private int calls;
+        private List<String> toolNames = List.of();
+        private List<Message> messages = List.of();
+
+        @Override
+        public LLMResponse chat(List<Message> messages) {
+            throw new AssertionError("Agent should provide tool definitions to the unified profile");
+        }
+
+        @Override
+        public LLMResponse chat(List<Message> messages, List<com.agent.llm.ToolDefinition> tools) {
+            calls++;
+            this.messages = List.copyOf(messages);
+            toolNames = tools.stream().map(com.agent.llm.ToolDefinition::name).toList();
+            return new LLMResponse("Java and C++ are both programming languages.", List.of());
+        }
+    }
+
+    private static void restoreSystemProperty(String name, String value) {
+        if (value == null) System.clearProperty(name);
+        else System.setProperty(name, value);
     }
 
     private static final class QueueClient implements LLMClient {
         private final ArrayDeque<LLMResponse> responses;
         private final List<String> userTasks = new java.util.ArrayList<>();
+        private String internalContext = "";
 
         private QueueClient(List<LLMResponse> responses) {
             this.responses = new ArrayDeque<>(responses);
@@ -495,11 +631,19 @@ class InteractiveCliTest {
             userTasks.clear();
             userTasks.addAll(messages.stream().filter(message -> message.role().equals("user"))
                     .map(Message::content).toList());
+            internalContext = messages.stream().filter(message -> message.role().equals("system"))
+                    .map(Message::content)
+                    .filter(content -> content.startsWith("INTERNAL WORKSPACE CONTEXT"))
+                    .reduce((left, right) -> right).orElse("");
             return responses.removeFirst();
         }
 
         private List<String> userTasks() {
             return List.copyOf(userTasks);
+        }
+
+        private String internalContext() {
+            return internalContext;
         }
     }
 

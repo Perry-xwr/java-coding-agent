@@ -11,13 +11,15 @@ import java.util.Objects;
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record Message(
         String role,
+        @JsonInclude(JsonInclude.Include.ALWAYS)
         String content,
         @JsonProperty("tool_calls") List<Map<String, Object>> toolCalls,
         @JsonProperty("tool_call_id") String toolCallId
 ) {
     public Message {
         Objects.requireNonNull(role, "role must not be null");
-        Objects.requireNonNull(content, "content must not be null");
+        // Older session snapshots may omit empty NON_EMPTY fields; normalize that representation.
+        content = content == null ? "" : content;
         toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
     }
 

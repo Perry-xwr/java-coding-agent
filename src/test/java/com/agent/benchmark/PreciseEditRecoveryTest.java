@@ -60,8 +60,9 @@ class PreciseEditRecoveryTest {
             }
         };
         ProcessRunner passing = (command, directory, timeout, maxOutput) ->
-                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 1);
-        ToolRegistry registry = ToolRegistry.withPreciseEditCodingTools(
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1);
+        ToolRegistry registry = com.agent.tool.TestingToolRegistries.withPreciseEditCodingTools(
                 workspace, passing, workspace.resolve(".m2/repository")
         );
         AgentRunResult run = new Agent(

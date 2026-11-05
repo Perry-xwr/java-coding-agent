@@ -12,6 +12,9 @@ import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
 import com.agent.tool.ToolErrorCode;
 import com.agent.tool.ToolResult;
+import com.agent.tool.TestingToolRegistries;
+import com.agent.tool.execution.ProcessExecutionResult;
+import com.agent.tool.execution.ProcessRunner;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -146,7 +149,8 @@ class V12ExecutionLayerTest {
                 "package demo; public class Greeter { public String greet(){ return \"hello\"; } }");
         Files.writeString(workspace.resolve("pom.xml"),"original fixture pom");
         V12HiddenMavenVerifier.Result result=new V12HiddenMavenVerifier(
-                Path.of("benchmark/v1.2/evaluator/hidden"),Path.of(".m2/repository"))
+                Path.of("benchmark/v1.2/evaluator/hidden"),Path.of(".m2/repository"),
+                (fixtureWorkspace, repository) -> ToolResult.success("fake evaluator pass"))
                 .verify("dev_10_java_maven_recovery",workspace);
         assertTrue(result.available());
         assertTrue(result.passed(),result.diagnosticSummary());
@@ -163,7 +167,8 @@ class V12ExecutionLayerTest {
                 call("read_file",Map.of("path","src/main/java/bench/Calculator.java")),
                 call("apply_patch",Map.of("path","src/main/java/bench/Calculator.java","oldText","return a-b","newText","return a+b")),
                 call("read_file",Map.of("path","src/main/java/bench/Calculator.java")),
-                call("run_maven_test",Map.of()), finalAnswer("done")),workspace);
+                call("run_maven_test",Map.of()), finalAnswer("done")),workspace,
+                TestingToolRegistries.withCliCodingTools(workspace, passingMavenRunner(), Path.of(".m2/repository")));
         List<V12TurnResult> turns=runtime.run(task);
         assertTrue(turns.get(0).trajectory().completed(),turns.get(0).trajectory().finalAnswer());
         AgentStep maven=toolSteps(turns).stream().filter(s->"run_maven_test".equals(s.toolName())).findFirst().orElseThrow();
@@ -179,17 +184,21 @@ class V12ExecutionLayerTest {
         Path workspace=new V12FixtureWorkspace().reset(task,temporary.resolve("runs"),"dev10-scripted");
         V12RuntimeHarness runtime=new V12RuntimeHarness(scripted(
                 call("run_maven_test",Map.of()),
+                call("read_file",Map.of("path","src/main/java/demo/Greeter.java")),
                 call("apply_patch",Map.of("path","src/main/java/demo/Greeter.java",
                         "oldText","return \"hi\";","newText","return \"hello\";")),
-                call("run_maven_test",Map.of()),finalAnswer("recovered")),workspace);
+                call("run_maven_test",Map.of()),finalAnswer("recovered")),workspace,
+                TestingToolRegistries.withCliCodingTools(workspace, recoveryMavenRunner(), Path.of(".m2/repository")));
         List<V12TurnResult> turns=runtime.run(task);
 
-        assertTrue(turns.get(0).trajectory().completed());
+        assertTrue(turns.get(0).trajectory().completed(), turns.get(0).trajectory().terminationReason()
+                + " " + turns.get(0).trajectory().steps().stream().map(AgentStep::errorMessage).toList());
         assertEquals(1,turns.get(0).trajectory().steps().stream()
                 .filter(s->s.actionType()==AgentActionType.AUTO_REREAD).count());
         V12EvaluationCheck check=new V12EvaluationCheckLoader().load(Path.of("benchmark/v1.2/evaluator/checks.json")).get(task.id());
         V12HiddenMavenVerifier hidden=new V12HiddenMavenVerifier(
-                Path.of("benchmark/v1.2/evaluator/hidden"),Path.of(".m2/repository"));
+                Path.of("benchmark/v1.2/evaluator/hidden"),Path.of(".m2/repository"),
+                (fixtureWorkspace, repository) -> ToolResult.success("fake hidden evaluator pass"));
         V12EvaluationResult evaluation=new V12DeterministicEvaluator(hidden).evaluate(task,workspace,turns,check);
         assertTrue(evaluation.passed(),evaluation.failedCriteria().toString());
     }
@@ -298,8 +307,30 @@ class V12ExecutionLayerTest {
     private static V12Task task(String id,List<String> instructions,Map<String,String> fixture,V12Evaluator evaluator) {
         return new V12Task(id,V12Split.DEV,"test",fixture,instructions,null,List.of("expected"),evaluator,10,List.of("test"),List.of("pass"));
     }
-    private static LLMClient scripted(LLMResponse... responses) { Deque<LLMResponse> queue=new ArrayDeque<>(List.of(responses)); return messages->queue.removeFirst(); }
+    private static LLMClient scripted(LLMResponse... responses) {
+        Deque<LLMResponse> queue=new ArrayDeque<>(List.of(responses));
+        return messages -> {
+            if (!queue.isEmpty()) return queue.removeFirst();
+            String tail = messages.stream().skip(Math.max(0, messages.size() - 3L))
+                    .map(message -> message.role() + ": " + message.content())
+                    .map(value -> value.length() > 300 ? value.substring(0, 300) : value)
+                    .toList().toString();
+            throw new java.io.IOException("script exhausted; final message summary=" + tail);
+        };
+    }
     private static LLMResponse finalAnswer(String text){return new LLMResponse(text,List.of());}
+    private static ProcessRunner passingMavenRunner() {
+        return (command, cwd, timeout, limit) -> new ProcessExecutionResult(0, false,
+                "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1);
+    }
+    private static ProcessRunner recoveryMavenRunner() {
+        Deque<ProcessExecutionResult> results = new ArrayDeque<>(List.of(
+                new ProcessExecutionResult(1, false,
+                        "Tests run: 1, Failures: 1, Errors: 0, Skipped: 0\nexpected:<hello> but was:<hi>", false, 1),
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1)));
+        return (command, cwd, timeout, limit) -> results.removeFirst();
+    }
     private static LLMResponse call(String name,Map<String,Object> args) throws Exception {return new LLMResponse("",List.of(new ToolCall(name+"-id",name,new ObjectMapper().writeValueAsString(args))));}
     private static List<AgentStep> toolSteps(List<V12TurnResult> turns){return turns.stream().flatMap(t->t.trajectory().steps().stream()).filter(s->s.actionType()==AgentActionType.TOOL_CALL).toList();}
     private static AgentStep toolStep(int index,String name,ToolResult result){return new AgentStep(index,AgentActionType.TOOL_CALL,name,"id","{}",Map.of(),result,null,null,0,0);}

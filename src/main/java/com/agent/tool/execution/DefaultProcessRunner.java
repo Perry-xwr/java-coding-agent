@@ -12,6 +12,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class DefaultProcessRunner implements ProcessRunner {
+    private final Map<String, String> parentEnvironment;
+
+    public DefaultProcessRunner() {
+        this(System.getenv());
+    }
+
+    DefaultProcessRunner(Map<String, String> parentEnvironment) {
+        this.parentEnvironment = Map.copyOf(parentEnvironment);
+    }
+
     @Override
     public ProcessExecutionResult run(
             List<String> command,
@@ -19,7 +29,21 @@ public final class DefaultProcessRunner implements ProcessRunner {
             Duration timeout,
             int maxOutputBytes
     ) throws IOException, InterruptedException {
-        return run(command, workingDirectory, timeout, maxOutputBytes, Map.of());
+        return runWithPolicy(command, workingDirectory, timeout, maxOutputBytes, Map.of(),
+                ProcessEnvironmentProfile.GENERAL);
+    }
+
+    @Override
+    public ProcessExecutionResult run(
+            List<String> command,
+            Path workingDirectory,
+            Duration timeout,
+            int maxOutputBytes,
+            Map<String, String> environmentOverrides,
+            ProcessEnvironmentProfile environmentProfile
+    ) throws IOException, InterruptedException {
+        return runWithPolicy(command, workingDirectory, timeout, maxOutputBytes, environmentOverrides,
+                environmentProfile);
     }
 
     @Override
@@ -29,6 +53,18 @@ public final class DefaultProcessRunner implements ProcessRunner {
             Duration timeout,
             int maxOutputBytes,
             Map<String, String> environmentOverrides
+    ) throws IOException, InterruptedException {
+        return runWithPolicy(command, workingDirectory, timeout, maxOutputBytes, environmentOverrides,
+                ProcessEnvironmentProfile.GENERAL);
+    }
+
+    private ProcessExecutionResult runWithPolicy(
+            List<String> command,
+            Path workingDirectory,
+            Duration timeout,
+            int maxOutputBytes,
+            Map<String, String> environmentOverrides,
+            ProcessEnvironmentProfile environmentProfile
     ) throws IOException, InterruptedException {
         if (command == null || command.isEmpty()) {
             throw new IllegalArgumentException("command must not be empty");
@@ -41,10 +77,14 @@ public final class DefaultProcessRunner implements ProcessRunner {
         ProcessBuilder processBuilder = new ProcessBuilder(List.copyOf(command))
                 .directory(workingDirectory.toFile())
                 .redirectErrorStream(true);
-        configureUtf8JavaOutput(processBuilder.environment());
-        if (environmentOverrides != null) {
-            processBuilder.environment().putAll(environmentOverrides);
-        }
+        Map<String, String> safeEnvironment = ProcessEnvironmentPolicy.create(
+                environmentProfile,
+                parentEnvironment,
+                environmentOverrides,
+                System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win")
+        );
+        processBuilder.environment().clear();
+        processBuilder.environment().putAll(safeEnvironment);
         Process process = processBuilder.start();
         BoundedCapture capture = new BoundedCapture(maxOutputBytes);
         AtomicReference<IOException> readFailure = new AtomicReference<>();
@@ -81,17 +121,6 @@ public final class DefaultProcessRunner implements ProcessRunner {
                 capture.output(),
                 capture.truncated(),
                 durationMs
-        );
-    }
-
-    private static void configureUtf8JavaOutput(Map<String, String> environment) {
-        String encodingOptions = "-Dfile.encoding=UTF-8"
-                + " -Dsun.stdout.encoding=UTF-8"
-                + " -Dsun.stderr.encoding=UTF-8";
-        String existing = environment.getOrDefault("JAVA_TOOL_OPTIONS", "").trim();
-        environment.put(
-                "JAVA_TOOL_OPTIONS",
-                existing.isEmpty() ? encodingOptions : existing + " " + encodingOptions
         );
     }
 

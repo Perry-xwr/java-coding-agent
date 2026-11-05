@@ -36,6 +36,7 @@ public final class WorkspacePathResolver {
                     "Resolved path is outside the workspace: " + value
             );
         }
+        rejectPrivatePath(realPath);
         return realPath;
     }
 
@@ -61,6 +62,7 @@ public final class WorkspacePathResolver {
                     "Resolved parent is outside the workspace: " + value
             );
         }
+        rejectPrivatePath(realParent.resolve(normalized.getFileName()));
         return realParent.resolve(normalized.getFileName());
     }
 
@@ -91,6 +93,35 @@ public final class WorkspacePathResolver {
                     "Path is outside the workspace: " + value
             );
         }
+        rejectPrivatePath(normalized);
         return normalized;
+    }
+
+    private void rejectPrivatePath(Path path) throws WorkspaceViolationException {
+        if (isPrivateRuntimePath(root, path)) {
+            throw new WorkspaceViolationException("Runtime session data is not accessible to workspace tools");
+        }
+    }
+
+    /** Shared exclusion for discovery and direct access, including aliases to runtime files. */
+    public static boolean isPrivateRuntimePath(Path root, Path path) {
+        Path base = root.toAbsolutePath().normalize();
+        Path candidate = path.toAbsolutePath().normalize();
+        if (hasPrivatePrefix(base, candidate) || hasPrivateSegment(candidate)) return true;
+        try { return hasPrivateSegment(candidate.toRealPath()); }
+        catch (IOException ignored) { return false; }
+    }
+
+    private static boolean hasPrivateSegment(Path path) {
+        for (Path component : path) {
+            if (".agent-cli".equalsIgnoreCase(component.toString())) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasPrivatePrefix(Path root, Path path) {
+        if (!path.startsWith(root)) return false;
+        Path relative = root.relativize(path);
+        return relative.getNameCount() > 0 && ".agent-cli".equalsIgnoreCase(relative.getName(0).toString());
     }
 }

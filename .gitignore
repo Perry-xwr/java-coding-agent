@@ -8,3 +8,8 @@ benchmark/results/
 benchmark-runs/
 *.log
 .vscode/
+.agent-cli/sessions/
+.agent-cli/conversations/
+.agent-cli/memory/
+
+.agent-cli/

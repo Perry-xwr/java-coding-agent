@@ -21,6 +21,12 @@ public final class DeterministicTaskEvaluator implements TaskEvaluator {
     private final Path localRepository;
     private final ProcessRunner processRunner;
     private final Map<String, EvaluationSpec> specs;
+    private final MavenTestExecutor mavenTestExecutor;
+
+    @FunctionalInterface
+    interface MavenTestExecutor {
+        ToolResult execute(Path workspace, String arguments);
+    }
 
     public DeterministicTaskEvaluator(
             FixtureWorkspaceManager workspaceManager,
@@ -29,11 +35,26 @@ public final class DeterministicTaskEvaluator implements TaskEvaluator {
             ProcessRunner processRunner,
             Map<String, EvaluationSpec> specs
     ) {
+        this(workspaceManager, hiddenRoot, localRepository, processRunner, specs, null);
+    }
+
+    DeterministicTaskEvaluator(
+            FixtureWorkspaceManager workspaceManager,
+            Path hiddenRoot,
+            Path localRepository,
+            ProcessRunner processRunner,
+            Map<String, EvaluationSpec> specs,
+            MavenTestExecutor mavenTestExecutor
+    ) {
         this.workspaceManager = Objects.requireNonNull(workspaceManager);
         this.hiddenRoot = Objects.requireNonNull(hiddenRoot).toAbsolutePath().normalize();
         this.localRepository = Objects.requireNonNull(localRepository).toAbsolutePath().normalize();
         this.processRunner = Objects.requireNonNull(processRunner);
         this.specs = Map.copyOf(Objects.requireNonNull(specs));
+        this.mavenTestExecutor = mavenTestExecutor == null
+                ? (workspace, arguments) -> new RunMavenTestTool(workspace, this.processRunner,
+                        this.localRepository).execute(arguments)
+                : mavenTestExecutor;
     }
 
     @Override
@@ -52,15 +73,10 @@ public final class DeterministicTaskEvaluator implements TaskEvaluator {
         Map<String, Object> metrics = new LinkedHashMap<>();
         if (task.evaluationType() != EvaluationType.FILE_CONTENT) {
             injectHiddenTests(task, workspace);
-            RunMavenTestTool maven = new RunMavenTestTool(
-                    workspace,
-                    processRunner,
-                    localRepository
-            );
             String arguments = task.targetTest() == null || task.targetTest().isBlank()
                     ? "{}"
                     : "{\"testClass\":\"" + task.targetTest() + "\"}";
-            ToolResult testResult = maven.execute(arguments);
+            ToolResult testResult = mavenTestExecutor.execute(workspace, arguments);
             if (testResult.errorCode() == ToolErrorCode.PROCESS_START_FAILED
                     || testResult.errorCode() == ToolErrorCode.PROCESS_TIMEOUT
                     || testResult.errorCode() == ToolErrorCode.TOOL_EXECUTION_ERROR) {

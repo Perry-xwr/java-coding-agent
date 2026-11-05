@@ -14,12 +14,26 @@ import java.util.Objects;
 final class StreamingResponseAccumulator {
     private final ObjectMapper objectMapper;
     private final LlmStreamListener listener;
+    private final String providerName;
+    private final String apiKey;
     private final StringBuilder content = new StringBuilder();
     private final Map<Integer, ToolCallBuilder> toolCalls = new LinkedHashMap<>();
+    private ProviderTokenUsage providerUsage = ProviderTokenUsage.unknown();
 
     StreamingResponseAccumulator(ObjectMapper objectMapper, LlmStreamListener listener) {
+        this(objectMapper, listener, "LLM provider");
+    }
+
+    StreamingResponseAccumulator(ObjectMapper objectMapper, LlmStreamListener listener, String providerName) {
+        this(objectMapper, listener, providerName, null);
+    }
+
+    StreamingResponseAccumulator(ObjectMapper objectMapper, LlmStreamListener listener,
+                                 String providerName, String apiKey) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.listener = Objects.requireNonNull(listener, "listener must not be null");
+        this.providerName = Objects.requireNonNull(providerName, "providerName must not be null");
+        this.apiKey = apiKey;
     }
 
     void accept(String data) throws IOException {
@@ -27,11 +41,15 @@ final class StreamingResponseAccumulator {
         try {
             root = objectMapper.readTree(data);
         } catch (IOException exception) {
-            throw new IOException("Malformed GLM streaming event", exception);
+            throw new IOException("Malformed " + providerName + " streaming event", exception);
         }
         JsonNode error = root.path("error");
         if (!error.isMissingNode() && !error.isNull()) {
-            throw new IOException("GLM streaming error: " + safeError(error));
+            throw new IOException(providerName + " streaming error: " + safeError(error));
+        }
+        JsonNode usage = root.get("usage");
+        if (usage != null && usage.isObject()) {
+            providerUsage = ProviderTokenUsage.fromJson(usage);
         }
         JsonNode choices = root.path("choices");
         if (!choices.isArray() || choices.isEmpty()) {
@@ -49,10 +67,17 @@ final class StreamingResponseAccumulator {
         JsonNode calls = delta.path("tool_calls");
         if (calls.isArray()) {
             for (JsonNode call : calls) {
-                int index = call.path("index").asInt(0);
+                JsonNode indexNode = call.get("index");
+                if (indexNode == null || !indexNode.canConvertToInt() || indexNode.asInt() < 0) {
+                    throw new IOException("Invalid " + providerName + " streaming tool-call index");
+                }
+                int index = indexNode.asInt();
                 ToolCallBuilder builder = toolCalls.computeIfAbsent(index, ignored -> new ToolCallBuilder());
                 String id = call.path("id").asText("");
                 if (!id.isEmpty()) {
+                    if (builder.id != null && !builder.id.equals(id)) {
+                        throw new IOException("Conflicting " + providerName + " streaming tool-call id");
+                    }
                     builder.id = id;
                 }
                 JsonNode function = call.path("function");
@@ -64,26 +89,34 @@ final class StreamingResponseAccumulator {
 
     LLMResponse finish() throws IOException {
         List<ToolCall> completed = new ArrayList<>();
+        java.util.Set<String> ids = new java.util.HashSet<>();
         for (Map.Entry<Integer, ToolCallBuilder> entry : toolCalls.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
                 .toList()) {
             ToolCallBuilder builder = entry.getValue();
             if (builder.id == null || builder.id.isBlank()
                     || builder.name.isEmpty() || builder.arguments.isEmpty()) {
-                throw new IOException("Incomplete tool call in GLM streaming response");
+                throw new IOException("Incomplete tool call in " + providerName + " streaming response");
+            }
+            if (!ids.add(builder.id)) {
+                throw new IOException("Duplicate " + providerName + " streaming tool-call id");
             }
             String arguments = builder.arguments.toString();
             try {
                 JsonNode parsedArguments = objectMapper.readTree(arguments);
                 if (parsedArguments == null || !parsedArguments.isObject()) {
-                    throw new IOException("Incomplete tool call in GLM streaming response");
+                    throw new IOException("Incomplete tool call in " + providerName + " streaming response");
                 }
             } catch (IOException exception) {
-                throw new IOException("Incomplete tool call in GLM streaming response", exception);
+                throw new IOException("Incomplete tool call in " + providerName + " streaming response", exception);
             }
             completed.add(new ToolCall(builder.id, builder.name.toString(), arguments));
         }
-        return new LLMResponse(content.toString(), completed);
+        return new LLMResponse(content.toString(), completed, providerUsage);
+    }
+
+    ProviderTokenUsage providerUsage() {
+        return providerUsage;
     }
 
     private static void append(StringBuilder target, String value) {
@@ -92,13 +125,17 @@ final class StreamingResponseAccumulator {
         }
     }
 
-    private static String safeError(JsonNode error) {
+    private String safeError(JsonNode error) {
         String message = error.path("message").asText("");
         if (!message.isBlank()) {
-            return message;
+            return redact(message);
         }
         String code = error.path("code").asText("");
         return code.isBlank() ? "provider error" : code;
+    }
+
+    private String redact(String value) {
+        return apiKey == null || apiKey.isBlank() ? value : value.replace(apiKey, "[REDACTED]");
     }
 
     private static final class ToolCallBuilder {

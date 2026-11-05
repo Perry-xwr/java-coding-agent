@@ -34,13 +34,24 @@ public final class ToolAvailabilityRuntimeHarness {
     private final ToolAvailabilityWorkspace workspaces = new ToolAvailabilityWorkspace();
     private final ToolAvailabilityEvaluator evaluator;
     private final ProcessRunner processRunner;
+    private final RegistryFactory registryFactory;
+
+    @FunctionalInterface
+    interface RegistryFactory {
+        ToolRegistry create(Path workspace, ProcessRunner runner, Path localRepository);
+    }
 
     public ToolAvailabilityRuntimeHarness() {
         this(new DefaultProcessRunner());
     }
 
     public ToolAvailabilityRuntimeHarness(ProcessRunner processRunner) {
+        this(processRunner, ToolRegistry::withCliCodingTools);
+    }
+
+    ToolAvailabilityRuntimeHarness(ProcessRunner processRunner, RegistryFactory registryFactory) {
         this.processRunner = Objects.requireNonNull(processRunner);
+        this.registryFactory = Objects.requireNonNull(registryFactory);
         this.evaluator = new ToolAvailabilityEvaluator(processRunner);
     }
 
@@ -57,7 +68,7 @@ public final class ToolAvailabilityRuntimeHarness {
         Path workspace = workspaces.create(task, fixturesRoot, runsRoot, runId, mode);
         Path fixture = fixturesRoot.toAbsolutePath().normalize().resolve(task.fixture()).normalize();
         MavenCountingProcessRunner countedRunner = new MavenCountingProcessRunner(processRunner);
-        ToolRegistry registry = ToolRegistry.withCliCodingTools(workspace, countedRunner,
+        ToolRegistry registry = registryFactory.create(workspace, countedRunner,
                 localMavenRepository.toAbsolutePath().normalize());
         LocalWorkspaceEnvironment local = new LocalWorkspaceEnvironment(workspace, registry);
         ToolAvailabilityObservations observations = new ToolAvailabilityObservations();

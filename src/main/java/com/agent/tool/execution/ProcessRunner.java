@@ -24,4 +24,15 @@ public interface ProcessRunner {
     ) throws IOException, InterruptedException {
         return run(command, workingDirectory, timeout, maxOutputBytes);
     }
+
+    default ProcessExecutionResult run(
+            List<String> command,
+            Path workingDirectory,
+            Duration timeout,
+            int maxOutputBytes,
+            Map<String, String> environmentOverrides,
+            ProcessEnvironmentProfile environmentProfile
+    ) throws IOException, InterruptedException {
+        return run(command, workingDirectory, timeout, maxOutputBytes, environmentOverrides);
+    }
 }

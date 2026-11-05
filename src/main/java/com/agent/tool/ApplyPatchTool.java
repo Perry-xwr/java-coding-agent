@@ -116,8 +116,8 @@ public final class ApplyPatchTool implements Tool {
         Map<String, Object> metadata = metadata(
                 path,
                 false,
-                original.length(),
-                original.length(),
+                original,
+                original,
                 matchCount
         );
         if (matchCount == 0) {
@@ -143,8 +143,8 @@ public final class ApplyPatchTool implements Tool {
         Map<String, Object> successMetadata = metadata(
                 path,
                 changed,
-                original.length(),
-                updated.length(),
+                original,
+                updated,
                 matchCount
         );
         if (!changed) {
@@ -210,16 +210,18 @@ public final class ApplyPatchTool implements Tool {
     private static Map<String, Object> metadata(
             String path,
             boolean changed,
-            int oldLength,
-            int newLength,
+            String original,
+            String updated,
             int matchCount
     ) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("path", path);
         metadata.put("changed", changed);
-        metadata.put("oldLength", oldLength);
-        metadata.put("newLength", newLength);
+        metadata.put("oldLength", original.length());
+        metadata.put("newLength", updated.length());
         metadata.put("matchCount", matchCount);
+        metadata.put("versionBefore", FileVersion.sha256(original));
+        metadata.put("versionAfter", FileVersion.sha256(updated));
         return metadata;
     }
 
