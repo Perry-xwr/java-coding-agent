@@ -71,6 +71,26 @@ class GlmProviderNetworkingTest {
         assertFalse(error.toString().contains("test-key"));
     }
 
+    @Test
+    void extractsServerUsageFromGlmNonStreamingResponse() throws Exception {
+        GlmClient client = client(chain -> new Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(ResponseBody.create("{\"choices\":[{\"message\":{\"content\":\"ok\"}}],"
+                        + "\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2,\"total_tokens\":9}}",
+                        MediaType.get("application/json")))
+                .build(), "test-key");
+
+        LLMResponse response = client.chat(List.of(Message.user("hello")));
+
+        assertTrue(response.providerUsage().usageAvailable());
+        org.junit.jupiter.api.Assertions.assertEquals(7, response.providerUsage().inputTokens());
+        org.junit.jupiter.api.Assertions.assertEquals(2, response.providerUsage().outputTokens());
+        org.junit.jupiter.api.Assertions.assertEquals(9, response.providerUsage().totalTokens());
+    }
+
     private static void assertTransportCategory(IOException failure, String expected) {
         GlmClient client = client(chain -> {
             throw failure;

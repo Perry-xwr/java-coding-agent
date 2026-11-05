@@ -125,7 +125,7 @@ public final class ReplaceLinesTool implements Tool {
                     ToolErrorCode.INVALID_LINE_RANGE,
                     "Line range " + input.startLine() + "-" + input.endLine()
                             + " is outside file line count " + lines.size(),
-                    metadata(input, false, original.length(), original.length(), 0)
+                    metadata(input, false, original.length(), original.length(), 0, original, original)
             );
         }
 
@@ -137,7 +137,7 @@ public final class ReplaceLinesTool implements Tool {
             return ToolResult.failure(
                     ToolErrorCode.STALE_EDIT_CONTEXT,
                     "expectedText does not match the current line range; reread the file",
-                    metadata(input, false, original.length(), original.length(), 0)
+                    metadata(input, false, original.length(), original.length(), 0, original, original)
             );
         }
 
@@ -153,7 +153,8 @@ public final class ReplaceLinesTool implements Tool {
                 : updatedNormalized;
         int lineDelta = replacement.size() - (input.endLine() - input.startLine() + 1);
         Map<String, Object> resultMetadata = metadata(
-                input, !updated.equals(original), original.length(), updated.length(), lineDelta
+                input, !updated.equals(original), original.length(), updated.length(), lineDelta,
+                original, updated
         );
         if (updated.equals(original)) {
             return ToolResult.failure(
@@ -247,7 +248,9 @@ public final class ReplaceLinesTool implements Tool {
             boolean changed,
             int oldLength,
             int newLength,
-            int lineDelta
+            int lineDelta,
+            String original,
+            String updated
     ) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("path", input.path());
@@ -257,6 +260,8 @@ public final class ReplaceLinesTool implements Tool {
         values.put("oldLength", oldLength);
         values.put("newLength", newLength);
         values.put("lineDelta", lineDelta);
+        values.put("versionBefore", FileVersion.sha256(original));
+        values.put("versionAfter", FileVersion.sha256(updated));
         return values;
     }
 

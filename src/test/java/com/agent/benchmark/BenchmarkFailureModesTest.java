@@ -9,6 +9,7 @@ import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
 import com.agent.tool.ToolRegistry;
+import com.agent.tool.TestingToolRegistries;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
 import org.junit.jupiter.api.Test;
@@ -79,8 +80,10 @@ class BenchmarkFailureModesTest {
     @Test
     void recordsTestFailureRecoveryInMetrics() {
         QueueRunner processes = new QueueRunner(List.of(
-                new ProcessExecutionResult(1, false, "tests failed", false, 2),
-                new ProcessExecutionResult(0, false, "tests passed", false, 2)
+                new ProcessExecutionResult(1, false,
+                        "Tests run: 1, Failures: 1, Errors: 0, Skipped: 0\nexpected:<5> but was:<4>", false, 2),
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 2)
         ));
         AgentRunResult run = new Agent(
                 fake(List.of(
@@ -88,7 +91,7 @@ class BenchmarkFailureModesTest {
                         call("t2", "run_maven_test", "{}"),
                         answer("recovered")
                 )),
-                ToolRegistry.withCodingTools(temporary, processes),
+                TestingToolRegistries.withCodingTools(temporary, processes, temporary.resolve(".m2/repository")),
                 "test",
                 4
         ).runWithTrajectory("recover");

@@ -99,7 +99,7 @@ public final class CliWorkingContext {
             case "list_files" -> observeListFiles(result);
             case "read_file" -> observeRead(pathFrom(arguments, result));
             case "create_file" -> observeMutation(pathFrom(arguments, result), toolName, VerifiedFileFactType.FILE_CREATED);
-            case "apply_patch", "insert_before", "insert_after", "replace_lines" ->
+            case "apply_patch", "apply_context_patch", "insert_before", "insert_after", "replace_lines" ->
                     observeMutation(pathFrom(arguments, result), toolName, VerifiedFileFactType.FILE_MUTATED);
             default -> {
                 // Tool output without a file fact is intentionally not promoted into memory.
@@ -116,6 +116,58 @@ public final class CliWorkingContext {
         verifiedFileFacts.clear();
         recentToolFailures.clear();
         lastMutation = null;
+    }
+
+    public Snapshot snapshot() {
+        return new Snapshot(mode, activeTask, explicitTargetFiles, lastResolvedFiles, lastResolvedFile,
+                List.copyOf(discoveredFiles), List.copyOf(verifiedFileFacts),
+                List.copyOf(recentToolFailures), lastMutation);
+    }
+
+    public void restore(Snapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot must not be null");
+        validateSnapshot(snapshot);
+        activeTask = snapshot.activeTask();
+        explicitTargetFiles = snapshot.explicitTargetFiles();
+        lastResolvedFiles = snapshot.lastResolvedFiles();
+        lastResolvedFile = snapshot.lastResolvedFile();
+        discoveredFiles.clear();
+        discoveredFiles.addAll(snapshot.discoveredFiles());
+        verifiedFileFacts.clear();
+        verifiedFileFacts.addAll(snapshot.verifiedFileFacts());
+        recentToolFailures.clear();
+        recentToolFailures.addAll(snapshot.recentToolFailures());
+        lastMutation = snapshot.lastMutation();
+    }
+
+    public void validateSnapshot(Snapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot must not be null");
+        if (snapshot.mode() != mode) {
+            throw new IllegalArgumentException("Saved working memory mode is incompatible with this CLI");
+        }
+        if (snapshot.discoveredFiles().size() > MAX_DISCOVERED_FILES
+                || snapshot.verifiedFileFacts().size() > MAX_VERIFIED_FACTS
+                || snapshot.recentToolFailures().size() > MAX_RECENT_FAILURES) {
+            throw new IllegalArgumentException("Saved working memory exceeds supported bounds");
+        }
+        snapshot.explicitTargetFiles().forEach(CliWorkingContext::requireSafeRelativePath);
+        snapshot.lastResolvedFiles().forEach(CliWorkingContext::requireSafeRelativePath);
+        snapshot.discoveredFiles().forEach(CliWorkingContext::requireSafeRelativePath);
+        if (snapshot.lastResolvedFile() != null) {
+            requireSafeRelativePath(snapshot.lastResolvedFile());
+        }
+        snapshot.verifiedFileFacts().forEach(fact -> requireSafeRelativePath(fact.path()));
+        snapshot.recentToolFailures().stream().map(ToolFailure::path)
+                .filter(path -> !"<unknown>".equals(path)).forEach(CliWorkingContext::requireSafeRelativePath);
+        if (snapshot.lastMutation() != null) {
+            requireSafeRelativePath(snapshot.lastMutation().path());
+        }
+    }
+
+    private static void requireSafeRelativePath(String path) {
+        if (normalizedRelativePath(path).isEmpty()) {
+            throw new IllegalArgumentException("Saved workspace context contains an invalid relative path");
+        }
     }
 
     public String activeTask() {
@@ -228,8 +280,8 @@ public final class CliWorkingContext {
             return;
         }
         switch (toolName) {
-            case "find_files" -> observeLegacyFiles(parseFiles(result.output(), true));
-            case "read_file", "create_file", "apply_patch", "insert_after" -> {
+            case "find_files" -> observeLegacyFiles(parseFiles(result.output()));
+            case "read_file", "create_file", "apply_patch", "apply_context_patch", "insert_after" -> {
                 String path = pathFrom(arguments, result);
                 if (path != null) {
                     observeLegacyFiles(List.of(path));
@@ -269,31 +321,31 @@ public final class CliWorkingContext {
     }
 
     private void observeFindFiles(ToolResult result) {
-        List<String> files = parseFiles(result.output(), true);
+        List<String> files = parseFiles(result.output());
         if (!files.isEmpty()) {
             recordResolvedFiles(files);
         }
     }
 
     private void observeListFiles(ToolResult result) {
-        List<String> files = parseFiles(result.output(), false);
+        List<String> files = parseFiles(result.output());
         if (!files.isEmpty()) {
             recordResolvedFiles(files);
         }
     }
 
-    private List<String> parseFiles(String output, boolean wrapped) {
+    private List<String> parseFiles(String output) {
         try {
             JsonNode root = OBJECT_MAPPER.readTree(output);
-            JsonNode files = wrapped && root != null ? root.get("files") : root;
+            JsonNode files = root != null && root.isObject() ? root.get("files") : root;
             if (files == null || !files.isArray()) {
                 return List.of();
             }
             List<String> parsed = new ArrayList<>();
             for (JsonNode file : files) {
-                if (file.isTextual()) {
-                    normalizedRelativePath(file.asText()).ifPresent(parsed::add);
-                }
+                String path = file.isTextual() ? file.asText()
+                        : file.isObject() && file.path("path").isTextual() ? file.path("path").asText() : null;
+                if (path != null) normalizedRelativePath(path).ifPresent(parsed::add);
             }
             return parsed.stream().distinct().limit(MAX_DISCOVERED_FILES).toList();
         } catch (Exception ignored) {
@@ -454,6 +506,32 @@ public final class CliWorkingContext {
         public LastMutation {
             path = requireNonBlank(path, "path must not be blank");
             tool = requireNonBlank(tool, "tool must not be blank");
+        }
+    }
+
+    public record Snapshot(
+            WorkingMemoryMode mode,
+            String activeTask,
+            List<String> explicitTargetFiles,
+            List<String> lastResolvedFiles,
+            String lastResolvedFile,
+            List<String> discoveredFiles,
+            List<VerifiedFileFact> verifiedFileFacts,
+            List<ToolFailure> recentToolFailures,
+            LastMutation lastMutation
+    ) {
+        public Snapshot {
+            Objects.requireNonNull(mode, "mode must not be null");
+            explicitTargetFiles = List.copyOf(Objects.requireNonNull(explicitTargetFiles,
+                    "explicitTargetFiles must not be null"));
+            lastResolvedFiles = List.copyOf(Objects.requireNonNull(lastResolvedFiles,
+                    "lastResolvedFiles must not be null"));
+            discoveredFiles = List.copyOf(Objects.requireNonNull(discoveredFiles,
+                    "discoveredFiles must not be null"));
+            verifiedFileFacts = List.copyOf(Objects.requireNonNull(verifiedFileFacts,
+                    "verifiedFileFacts must not be null"));
+            recentToolFailures = List.copyOf(Objects.requireNonNull(recentToolFailures,
+                    "recentToolFailures must not be null"));
         }
     }
 }

@@ -6,6 +6,7 @@ import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
 import com.agent.tool.ToolErrorCode;
 import com.agent.tool.ToolRegistry;
+import com.agent.tool.TestingToolRegistries;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
 import org.junit.jupiter.api.Test;
@@ -61,8 +62,8 @@ class DiagnosticRecoveryTest {
         String observation = llm.histories().get(1).stream()
                 .filter(message -> "tool".equals(message.role()))
                 .findFirst().orElseThrow().content();
-        assertTrue(observation.startsWith("TEST FAILED\n\nKey diagnostics:"));
-        assertTrue(observation.indexOf("cannot find symbol") < observation.indexOf("Relevant output"));
+        assertTrue(observation.startsWith("MAVEN_RESULT (untrusted process output;"));
+        assertTrue(observation.indexOf("cannot find symbol") < observation.indexOf("Output excerpt (bounded)"));
     }
 
     @Test
@@ -95,12 +96,14 @@ class DiagnosticRecoveryTest {
     }
 
     @Test
-    void patchWithoutRereadGetsOneFreshnessWarning() throws Exception {
+    void repairAfterMavenFailureRequiresFreshReadBeforeEditing() throws Exception {
         Files.writeString(workspace.resolve("App.java"), "old");
         RecordingFakeLLM llm = new RecordingFakeLLM(List.of(
                 call("patch-1", "apply_patch", patch("old", "broken")),
                 call("read-after-first", "read_file", "{\"path\":\"App.java\"}"),
                 call("test-1", "run_maven_test", "{}"),
+                call("patch-before-read", "apply_patch", patch("broken", "fixed")),
+                call("read-after-failure", "read_file", "{\"path\":\"App.java\"}"),
                 call("patch-2", "apply_patch", patch("broken", "fixed")),
                 call("read-after-second", "read_file", "{\"path\":\"App.java\"}"),
                 call("test-2", "run_maven_test", "{}"),
@@ -113,11 +116,13 @@ class DiagnosticRecoveryTest {
                         failed("[ERROR] C:\\work\\App.java:[1,1] illegal start of expression"),
                         passed()
                 )),
-                8
+                10
         ).runWithTrajectory("Fix App");
 
-        assertEquals(1, feedbackCount(result, "PATCH_FRESHNESS_WARNING:"));
         assertEquals("Recovered.", result.finalAnswer());
+        assertTrue(toolSteps(result).stream().anyMatch(step ->
+                "apply_patch".equals(step.toolName())
+                        && step.toolResult().errorCode() == ToolErrorCode.REPAIR_REQUIRES_FRESH_READ));
     }
 
     @Test
@@ -153,7 +158,7 @@ class DiagnosticRecoveryTest {
 
         assertEquals(1, feedbackCount(result, "STEP_BUDGET_WARNING:"));
         assertEquals(1, feedbackCount(result, "PREMATURE_FINAL_GUARD:"));
-        assertEquals("Workspace modification failed: no write operation succeeded "
+        assertEquals("MUTATION_FAILURE_FINAL: Workspace modification failed: no write operation succeeded "
                 + "and no current file read confirmed that a change was unnecessary.", result.finalAnswer());
         assertFalse(result.trajectory().completed());
     }
@@ -193,7 +198,7 @@ class DiagnosticRecoveryTest {
         RecordingFakeLLM llm = new RecordingFakeLLM(List.of(answer("Explanation.")));
         Agent agent = new Agent(
                 llm,
-                ToolRegistry.withCodingTools(workspace, new QueueRunner(List.of())),
+                TestingToolRegistries.withCodingTools(workspace, new QueueRunner(List.of()), workspace.resolve(".m2")),
                 "read only",
                 2,
                 TaskMode.READ_ONLY,
@@ -210,7 +215,7 @@ class DiagnosticRecoveryTest {
     private Agent diagnosticAgent(LLMClient llm, ProcessRunner runner, int maxSteps) {
         return new Agent(
                 llm,
-                ToolRegistry.withActionOrientedCodingTools(
+                TestingToolRegistries.withActionOrientedCodingTools(
                         workspace,
                         runner,
                         workspace.resolve(".m2/repository")
@@ -262,7 +267,8 @@ class DiagnosticRecoveryTest {
     }
 
     private static ProcessExecutionResult passed() {
-        return new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 3);
+        return new ProcessExecutionResult(0, false,
+                "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 3);
     }
 
     private static String compilerFailure(String file, int line, String symbol) {

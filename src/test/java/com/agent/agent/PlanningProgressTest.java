@@ -5,6 +5,7 @@ import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
 import com.agent.tool.ToolRegistry;
+import com.agent.tool.TestingToolRegistries;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
 import org.junit.jupiter.api.Test;
@@ -111,8 +112,10 @@ class PlanningProgressTest {
         write("App.java", "old\n");
         QueueRunner runner = new QueueRunner(List.of(
                 new ProcessExecutionResult(1, false,
-                        "[ERROR] AppTest.nullCase -- expected: <true> but was: <false>", false, 1),
-                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 1)
+                        "Tests run: 1, Failures: 1, Errors: 0, Skipped: 0\n" +
+                                "[ERROR] AppTest.nullCase -- expected: <true> but was: <false>", false, 1),
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1)
         ));
         CapturingClient client = client(List.of(
                 response(twoRequirementPlan(false, false), call("p1", "apply_patch", patch(
@@ -182,7 +185,7 @@ class PlanningProgressTest {
     private Agent planningAgent(LLMClient client, ProcessRunner runner, int maxIterations) {
         return new Agent(
                 client,
-                ToolRegistry.withCodingTools(workspace, runner),
+                TestingToolRegistries.withCodingTools(workspace, runner, workspace.resolve(".m2")),
                 "planning system",
                 maxIterations,
                 TaskMode.CODE_MODIFICATION,
@@ -269,7 +272,8 @@ class PlanningProgressTest {
 
     private static ProcessRunner passingRunner() {
         return (command, directory, timeout, maxOutput) ->
-                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 1);
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1);
     }
 
     private static final class CapturingClient implements LLMClient {

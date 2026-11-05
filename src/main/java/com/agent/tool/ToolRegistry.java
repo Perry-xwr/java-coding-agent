@@ -1,6 +1,9 @@
 package com.agent.tool;
 
 import com.agent.llm.ToolDefinition;
+import com.agent.execution.secure.ApprovalDecision;
+import com.agent.execution.secure.ExecutionApprovalPrompt;
+import com.agent.execution.secure.HostMavenExecutionApproval;
 import com.agent.tool.execution.DefaultProcessRunner;
 import com.agent.tool.execution.ProcessRunner;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -16,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 public class ToolRegistry {
     private final Map<String, Tool> tools = new LinkedHashMap<>();
@@ -60,71 +64,70 @@ public class ToolRegistry {
             ProcessRunner processRunner,
             Path localRepository
     ) {
+        return buildCodingTools(root, processRunner, localRepository, false, false, false,
+                HostMavenExecutionApproval::request);
+    }
+
+    static ToolRegistry withCodingToolsForTesting(Path root, ProcessRunner processRunner,
+                                                   Path localRepository,
+                                                   Function<ExecutionApprovalPrompt, ApprovalDecision> approver) {
+        return buildCodingTools(root, processRunner, localRepository, false, false, false, approver);
+    }
+
+    private static ToolRegistry buildCodingTools(Path root, ProcessRunner processRunner, Path localRepository,
+                                                  boolean actionOriented, boolean preciseEdits, boolean cliTools,
+                                                  Function<ExecutionApprovalPrompt, ApprovalDecision> approver) {
         Objects.requireNonNull(root, "root must not be null");
         Objects.requireNonNull(processRunner, "processRunner must not be null");
         Objects.requireNonNull(localRepository, "localRepository must not be null");
+        Objects.requireNonNull(approver, "approver must not be null");
 
-        ToolRegistry registry = new ToolRegistry();
+        ToolRegistry registry = new ToolRegistry(actionOriented, preciseEdits);
         ObjectMapper objectMapper = new ObjectMapper();
         WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
         registerFileTools(registry, objectMapper, pathResolver);
         registry.register(new ApplyPatchTool(pathResolver, objectMapper));
-        registry.register(new RunMavenTestTool(
-                pathResolver.root(),
-                processRunner,
-                localRepository,
-                objectMapper
-        ));
+        if (cliTools) {
+            registry.register(new ApplyContextPatchTool(pathResolver, objectMapper,
+                    AtomicTextFileWriter.strictlyAtomicUtf8()));
+            registry.register(new InsertBeforeTool(pathResolver, objectMapper));
+            registry.register(new InsertAfterTool(pathResolver, objectMapper));
+            registry.register(new CreateFileTool(pathResolver, objectMapper));
+        } else if (preciseEdits) {
+            registry.register(new ReplaceLinesTool(pathResolver, objectMapper, AtomicTextFileWriter.utf8()));
+        }
+        registry.register(new RunMavenTestTool(pathResolver.root(), processRunner, localRepository, objectMapper,
+                RunMavenTestTool.DEFAULT_TIMEOUT, RunMavenTestTool.DEFAULT_MAX_OUTPUT_BYTES, approver));
         return registry;
     }
 
-    public static ToolRegistry withActionOrientedCodingTools(
-            Path root,
-            ProcessRunner processRunner,
-            Path localRepository
-    ) {
-        Objects.requireNonNull(root, "root must not be null");
-        Objects.requireNonNull(processRunner, "processRunner must not be null");
-        Objects.requireNonNull(localRepository, "localRepository must not be null");
-
-        ToolRegistry registry = new ToolRegistry(true);
-        ObjectMapper objectMapper = new ObjectMapper();
-        WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
-        registerFileTools(registry, objectMapper, pathResolver);
-        registry.register(new ApplyPatchTool(pathResolver, objectMapper));
-        registry.register(new RunMavenTestTool(
-                pathResolver.root(),
-                processRunner,
-                localRepository,
-                objectMapper
-        ));
-        return registry;
+    public static ToolRegistry withActionOrientedCodingTools(Path root, ProcessRunner processRunner,
+                                                              Path localRepository) {
+        return buildCodingTools(root, processRunner, localRepository, true, false, false,
+                HostMavenExecutionApproval::request);
     }
 
-    /**
-     * CLI-only coding tools. Kept separate so frozen Benchmark baselines retain their original set.
-     */
-    public static ToolRegistry withCliCodingTools(
-            Path root,
-            ProcessRunner processRunner,
-            Path localRepository
-    ) {
-        Objects.requireNonNull(root, "root must not be null");
-        Objects.requireNonNull(processRunner, "processRunner must not be null");
-        Objects.requireNonNull(localRepository, "localRepository must not be null");
+    static ToolRegistry withActionOrientedCodingToolsForTesting(Path root, ProcessRunner processRunner,
+                                                                 Path localRepository,
+                                                                 Function<ExecutionApprovalPrompt, ApprovalDecision> approver) {
+        return buildCodingTools(root, processRunner, localRepository, true, false, false, approver);
+    }
 
-        ToolRegistry registry = new ToolRegistry(true);
-        ObjectMapper objectMapper = new ObjectMapper();
-        WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
-        registerFileTools(registry, objectMapper, pathResolver);
-        registry.register(new ApplyPatchTool(pathResolver, objectMapper));
-        registry.register(new InsertBeforeTool(pathResolver, objectMapper));
-        registry.register(new InsertAfterTool(pathResolver, objectMapper));
-        registry.register(new CreateFileTool(pathResolver, objectMapper));
-        registry.register(new RunMavenTestTool(
-                pathResolver.root(), processRunner, localRepository, objectMapper
-        ));
-        return registry;
+    /** CLI-only coding tools. Kept separate so frozen Benchmark baselines retain their original set. */
+    public static ToolRegistry withCliCodingTools(Path root, ProcessRunner processRunner, Path localRepository) {
+        return buildCodingTools(root, processRunner, localRepository, true, false, true,
+                HostMavenExecutionApproval::request);
+    }
+
+    /** Same R1 tool/policy; only the trusted native TUI response transport changes. */
+    public static ToolRegistry withTuiCodingTools(Path root,ProcessRunner runner,Path repository,
+            com.agent.execution.secure.TuiMavenApprovalChannel.Turn approvalTurn){
+        return buildCodingTools(root,approvalTurn.guard(runner),repository,true,false,true,approvalTurn::request);
+    }
+
+    static ToolRegistry withCliCodingToolsForTesting(Path root, ProcessRunner processRunner, Path localRepository,
+                                                      Function<ExecutionApprovalPrompt, ApprovalDecision> approver) {
+        return buildCodingTools(root, processRunner, localRepository, true, false, true, approver);
     }
 
     public static ToolRegistry withPreciseEditCodingTools(
@@ -132,24 +135,14 @@ public class ToolRegistry {
             ProcessRunner processRunner,
             Path localRepository
     ) {
-        Objects.requireNonNull(root, "root must not be null");
-        Objects.requireNonNull(processRunner, "processRunner must not be null");
-        Objects.requireNonNull(localRepository, "localRepository must not be null");
+        return buildCodingTools(root, processRunner, localRepository, true, true, false,
+                HostMavenExecutionApproval::request);
+    }
 
-        ToolRegistry registry = new ToolRegistry(true, true);
-        ObjectMapper objectMapper = new ObjectMapper();
-        WorkspacePathResolver pathResolver = new WorkspacePathResolver(root);
-        registerFileTools(registry, objectMapper, pathResolver);
-        registry.register(new ApplyPatchTool(pathResolver, objectMapper));
-        registry.register(new ReplaceLinesTool(
-                pathResolver,
-                objectMapper,
-                AtomicTextFileWriter.utf8()
-        ));
-        registry.register(new RunMavenTestTool(
-                pathResolver.root(), processRunner, localRepository, objectMapper
-        ));
-        return registry;
+    static ToolRegistry withPreciseEditCodingToolsForTesting(Path root, ProcessRunner processRunner,
+                                                              Path localRepository,
+                                                              Function<ExecutionApprovalPrompt, ApprovalDecision> approver) {
+        return buildCodingTools(root, processRunner, localRepository, true, true, false, approver);
     }
 
     private static void registerFileTools(
@@ -239,6 +232,11 @@ public class ToolRegistry {
                     + "TEXT_NOT_FOUND or MULTIPLE_MATCHES, reread with line numbers and use "
                     + "replace_lines instead of guessing oldText again."
                     : "precise patch instead of repeating the same call.");
+            case "apply_context_patch" -> tool.description()
+                    + " Prefer this tool for existing source-code edits that add or change blocks: first read the "
+                    + "complete file, pass that exact content as expectedContent, and include unique multiline "
+                    + "SEARCH/REPLACE contexts with deliberate blank lines and indentation. A successful text "
+                    + "edit is not syntax or behavior verification.";
             case "create_file" -> tool.description()
                     + " Use it only for a genuinely new file. For an existing file, use apply_patch; "
                     + "create_file never overwrites a path that already exists.";
@@ -311,13 +309,22 @@ public class ToolRegistry {
 
         @Override
         public String description() {
-            return "Recursively lists regular files under a path relative to the workspace root.";
+            return "Recursively lists regular files under a workspace-relative path in stable sorted order. "
+                    + "Results are bounded; inspect truncated and nextOffset, then request the next page with "
+                    + "the same path, limit, and offset=nextOffset. Long path fragments share fragmentCount "
+                    + "and must be concatenated in fragmentIndex order.";
         }
 
         @Override
         public Map<String, Object> parameters() {
             return objectSchema(
-                    Map.of("path", stringProperty("Optional path relative to the workspace root.")),
+                    Map.of("path", stringProperty("Optional path relative to the workspace root."),
+                            "offset", Map.of("type", "integer", "minimum", 0,
+                                    "description", "Zero-based result offset; use nextOffset to continue."),
+                            "limit", Map.of("type", "integer", "minimum", 1,
+                                    "maximum", PagedToolOutput.MAX_PAGE_SIZE,
+                                    "description", "Maximum results in this page; defaults to "
+                                            + PagedToolOutput.DEFAULT_PAGE_SIZE + ".")),
                     List.of()
             );
         }
@@ -327,11 +334,21 @@ public class ToolRegistry {
             try {
                 JsonNode input = parseArguments(objectMapper, arguments);
                 String path = input.path("path").asText(".");
-                return ToolResult.success(
-                        objectMapper.writeValueAsString(delegate.listFiles(resolve(path)))
-                );
+                int offset = paginationInteger(input, "offset", 0);
+                int limit = paginationInteger(input, "limit", PagedToolOutput.DEFAULT_PAGE_SIZE);
+                if (offset < 0 || limit < 1 || limit > PagedToolOutput.MAX_PAGE_SIZE) {
+                    throw new IllegalArgumentException("offset must be non-negative and limit must be between 1 and "
+                            + PagedToolOutput.MAX_PAGE_SIZE);
+                }
+                List<String> files = delegate.listFiles(resolve(path));
+                List<Map<String, Object>> items = PagedToolOutput.filePathItems(files);
+                PagedToolOutput.Page page = PagedToolOutput.encode(objectMapper, "files", items,
+                        Map.of("totalFiles", files.size()), offset, limit);
+                return ToolResult.success(page.json(), pageMetadata(page, offset, limit, files.size()));
             } catch (IOException exception) {
                 return failure(exception);
+            } catch (IllegalArgumentException exception) {
+                return ToolResult.failure(ToolErrorCode.INVALID_ARGUMENTS, messageOrType(exception));
             }
         }
     }
@@ -418,7 +435,10 @@ public class ToolRegistry {
 
         @Override
         public String description() {
-            return "Searches text files recursively for lines containing a keyword.";
+            return "Searches text files recursively for matching lines in stable file/line order. Results are "
+                    + "bounded; inspect truncated and nextOffset, then request the next page with the same "
+                    + "keyword/path/limit and offset=nextOffset. Long lines are split into numbered content "
+                    + "fragments; concatenate matching fragments in fragmentIndex order.";
         }
 
         @Override
@@ -426,8 +446,13 @@ public class ToolRegistry {
             return objectSchema(
                     Map.of(
                             "keyword", stringProperty("Exact keyword to search for."),
-                            "path", stringProperty("Optional path relative to the workspace root.")
-                    ),
+                            "path", stringProperty("Optional path relative to the workspace root."),
+                            "offset", Map.of("type", "integer", "minimum", 0,
+                                    "description", "Zero-based result offset; use nextOffset to continue."),
+                            "limit", Map.of("type", "integer", "minimum", 1,
+                                    "maximum", PagedToolOutput.MAX_PAGE_SIZE,
+                                    "description", "Maximum results in this page; defaults to "
+                                            + PagedToolOutput.DEFAULT_PAGE_SIZE + ".")),
                     List.of("keyword")
             );
         }
@@ -438,11 +463,20 @@ public class ToolRegistry {
                 JsonNode input = parseArguments(objectMapper, arguments);
                 String keyword = requireNonBlank(input.path("keyword").asText(null), "keyword");
                 String path = input.path("path").asText(".");
-                return ToolResult.success(
-                        objectMapper.writeValueAsString(delegate.searchCode(keyword, resolve(path)))
-                );
+                int offset = paginationInteger(input, "offset", 0);
+                int limit = paginationInteger(input, "limit", PagedToolOutput.DEFAULT_PAGE_SIZE);
+                if (offset < 0 || limit < 1 || limit > PagedToolOutput.MAX_PAGE_SIZE) {
+                    throw new IllegalArgumentException("offset must be non-negative and limit must be between 1 and "
+                            + PagedToolOutput.MAX_PAGE_SIZE);
+                }
+                List<SearchCodeTool.Match> matches = delegate.searchCode(keyword, resolve(path));
+                PagedToolOutput.Page page = PagedToolOutput.encode(objectMapper, "matches",
+                        PagedToolOutput.matchItems(matches), Map.of("totalMatches", matches.size()), offset, limit);
+                return ToolResult.success(page.json(), pageMetadata(page, offset, limit, matches.size()));
             } catch (IOException exception) {
                 return failure(exception);
+            } catch (IllegalArgumentException exception) {
+                return ToolResult.failure(ToolErrorCode.INVALID_ARGUMENTS, messageOrType(exception));
             }
         }
     }
@@ -486,6 +520,25 @@ public class ToolRegistry {
             throw new IllegalArgumentException(name + " must not be blank");
         }
         return value;
+    }
+
+    private static int paginationInteger(JsonNode input, String name, int defaultValue) {
+        JsonNode value = input.get(name);
+        if (value == null) return defaultValue;
+        if (!value.isIntegralNumber() || !value.canConvertToInt()) {
+            throw new IllegalArgumentException(name + " must be an integer");
+        }
+        return value.intValue();
+    }
+
+    private static Map<String, Object> pageMetadata(PagedToolOutput.Page page, int offset, int limit, int total) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("offset", offset);
+        metadata.put("limit", limit);
+        metadata.put("truncated", page.truncated());
+        if (page.nextOffset() != null) metadata.put("nextOffset", page.nextOffset());
+        metadata.put("total", total);
+        return metadata;
     }
 
     private static String messageOrType(Exception exception) {

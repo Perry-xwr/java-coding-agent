@@ -11,6 +11,7 @@ public class ListFilesTool {
         try (Stream<Path> paths = Files.walk(root)) {
             return paths
                     .filter(Files::isRegularFile)
+                    .filter(path -> !WorkspacePathResolver.isPrivateRuntimePath(root, path))
                     .map(root::relativize)
                     .map(Path::toString)
                     .sorted()

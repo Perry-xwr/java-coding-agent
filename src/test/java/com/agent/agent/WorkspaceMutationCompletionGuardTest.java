@@ -96,9 +96,10 @@ class WorkspaceMutationCompletionGuardTest {
         AgentRunResult result = agent.runWithTrajectory("在 example.py 里添加 foo 函数");
 
         assertFalse(result.trajectory().completed());
-        assertEquals(TerminationReason.MAX_STEPS, result.trajectory().terminationReason());
+        assertEquals(TerminationReason.FINAL_ANSWER, result.trajectory().terminationReason());
+        assertTrue(result.finalAnswer().contains("WORKSPACE_CHANGE_NOT_COMPLETED"));
         assertFalse(Files.readString(workspace.resolve("example.py")).contains("def foo"));
-        assertEquals(3, result.trajectory().steps().stream()
+        assertEquals(1, result.trajectory().steps().stream()
                 .filter(step -> step.actionType() == AgentActionType.COMPLETION_GUARD)
                 .count());
         assertEquals(1, client.messageSnapshots().get(1).stream()
@@ -115,9 +116,10 @@ class WorkspaceMutationCompletionGuardTest {
         AgentRunResult result = agent.runWithTrajectory("新建 hello.py");
 
         assertFalse(result.trajectory().completed());
-        assertEquals(TerminationReason.MAX_STEPS, result.trajectory().terminationReason());
+        assertEquals(TerminationReason.FINAL_ANSWER, result.trajectory().terminationReason());
+        assertTrue(result.finalAnswer().contains("WORKSPACE_CHANGE_NOT_COMPLETED"));
         assertFalse(Files.exists(workspace.resolve("hello.py")));
-        assertEquals(2, result.trajectory().steps().stream()
+        assertEquals(1, result.trajectory().steps().stream()
                 .filter(step -> step.actionType() == AgentActionType.COMPLETION_GUARD).count());
     }
 
@@ -138,8 +140,9 @@ class WorkspaceMutationCompletionGuardTest {
         AgentRunResult result = agent.runWithTrajectory("Modify example.py");
 
         assertFalse(result.trajectory().completed());
-        assertEquals(2, result.trajectory().steps().stream()
+        assertEquals(1, result.trajectory().steps().stream()
                 .filter(step -> step.actionType() == AgentActionType.COMPLETION_GUARD).count());
+        assertTrue(result.finalAnswer().contains("WORKSPACE_CHANGE_NOT_COMPLETED"));
     }
 
     @Test

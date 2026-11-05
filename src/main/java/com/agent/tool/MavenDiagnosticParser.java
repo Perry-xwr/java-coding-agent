@@ -27,6 +27,15 @@ public final class MavenDiagnosticParser {
             "'}' expected",
             "unclosed string literal"
     );
+    private static final List<String> DEPENDENCY_MARKERS = List.of(
+            "Could not resolve dependencies", "Could not find artifact", "Could not transfer artifact",
+            "Failed to collect dependencies", "DependencyResolutionException", "UnknownHostException",
+            "PKIX path building failed", "Connection timed out", "Connection reset"
+    );
+    private static final List<String> BUILD_CONFIGURATION_MARKERS = List.of(
+            "Unknown lifecycle phase", "No plugin found for prefix", "PluginResolutionException",
+            "InvalidPluginDescriptorException", "POM is missing", "Non-parseable POM"
+    );
 
     public MavenDiagnostic parse(String output) {
         String text = output == null ? "" : output;
@@ -88,6 +97,18 @@ public final class MavenDiagnosticParser {
             );
         }
 
+        String lower = text.toLowerCase(java.util.Locale.ROOT);
+        if (containsAny(lower, DEPENDENCY_MARKERS)) {
+            return new MavenDiagnostic(DiagnosticType.DEPENDENCY,
+                    "Maven dependency or repository resolution was unavailable", null, null, null,
+                    null, null, null, null, "dependency resolution unavailable", rawFragment);
+        }
+        if (containsAny(lower, BUILD_CONFIGURATION_MARKERS)) {
+            return new MavenDiagnostic(DiagnosticType.BUILD_CONFIGURATION,
+                    "Maven build configuration or plugin setup failed", null, null, null,
+                    null, null, null, null, "build configuration failure", rawFragment);
+        }
+
         List<String> errors = text.lines()
                 .map(String::trim)
                 .filter(lineText -> lineText.startsWith("[ERROR]"))
@@ -101,6 +122,21 @@ public final class MavenDiagnosticParser {
                 DiagnosticType.UNKNOWN, summary, file, line, null,
                 null, null, null, null, sourceMessage, rawFragment
         );
+    }
+
+    private static boolean containsAny(String text, List<String> markers) {
+        return markers.stream().anyMatch(marker -> text.contains(marker.toLowerCase(java.util.Locale.ROOT)));
+    }
+
+    /** Returns a bounded list of test identifiers present in real Surefire/Failsafe failure lines. */
+    public List<String> failureIdentifiers(String output) {
+        Matcher matcher = TEST.matcher(output == null ? "" : output);
+        java.util.ArrayList<String> identifiers = new java.util.ArrayList<>();
+        while (matcher.find() && identifiers.size() < 20) {
+            String id = matcher.group(1) + "." + matcher.group(2);
+            if (!identifiers.contains(id)) identifiers.add(id);
+        }
+        return List.copyOf(identifiers);
     }
 
     private static boolean isCompilationFailure(String text, String file) {

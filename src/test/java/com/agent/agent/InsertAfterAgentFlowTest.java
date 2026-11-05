@@ -42,10 +42,11 @@ class InsertAfterAgentFlowTest {
         ));
         Agent agent = new Agent(
                 client,
-                ToolRegistry.withCliCodingTools(
+                com.agent.tool.TestingToolRegistries.withCliCodingTools(
                         workspace,
                         (command, directory, timeout, maxOutput) ->
-                                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 1),
+                                new ProcessExecutionResult(0, false,
+                                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1),
                         workspace.resolve(".m2/repository")
                 ),
                 "coding",
@@ -295,9 +296,10 @@ class InsertAfterAgentFlowTest {
 
         AgentRunResult result = agent.runWithTrajectory("Insert content in hello.cpp");
         assertFalse(result.trajectory().completed());
-        assertEquals(TerminationReason.MAX_STEPS, result.trajectory().terminationReason());
+        assertEquals(TerminationReason.FINAL_ANSWER, result.trajectory().terminationReason());
+        assertTrue(result.finalAnswer().contains("WORKSPACE_CHANGE_NOT_COMPLETED"));
         assertEquals(original, Files.readString(workspace.resolve("hello.cpp")));
-        assertEquals(6, result.trajectory().steps().stream()
+        assertEquals(1, result.trajectory().steps().stream()
                 .filter(step -> step.actionType() == AgentActionType.COMPLETION_GUARD).count());
         assertTrue(agent.history().stream().anyMatch(message ->
                 message.role().equals("tool") && message.content().contains("AMBIGUOUS_MATCH")));
@@ -306,10 +308,11 @@ class InsertAfterAgentFlowTest {
     private Agent codingAgent(LLMClient client) {
         return new Agent(
                 client,
-                ToolRegistry.withCliCodingTools(
+                com.agent.tool.TestingToolRegistries.withCliCodingTools(
                         workspace,
                         (command, directory, timeout, maxOutput) ->
-                                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 1),
+                                new ProcessExecutionResult(0, false,
+                                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1),
                         workspace.resolve(".m2/repository")
                 ),
                 "coding",

@@ -10,21 +10,27 @@ import java.util.Map;
 public final class ModelProviderConfig {
     public static final String GLM = "glm";
     public static final String OPENAI_COMPATIBLE = "openai-compatible";
+    public static final String DEEPSEEK = "deepseek";
     public static final String DEFAULT_GLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
     public static final String DEFAULT_GLM_MODEL = "glm-4-flash";
+    public static final String DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+    public static final String DEFAULT_DEEPSEEK_MODEL = "deepseek-flash";
 
     private final String provider;
     private final String baseUrl;
     private final String model;
     private final String apiKey;
     private final Proxy proxy;
+    private final boolean deepSeekNonThinking;
 
-    private ModelProviderConfig(String provider, String baseUrl, String model, String apiKey, Proxy proxy) {
+    private ModelProviderConfig(String provider, String baseUrl, String model, String apiKey,
+                                Proxy proxy, boolean deepSeekNonThinking) {
         this.provider = provider;
         this.baseUrl = trimTrailingSlashes(baseUrl);
         this.model = model;
         this.apiKey = apiKey;
         this.proxy = proxy;
+        this.deepSeekNonThinking = deepSeekNonThinking;
     }
 
     public static ModelProviderConfig fromEnvironment() {
@@ -41,7 +47,7 @@ public final class ModelProviderConfig {
                     GLM,
                     environment.getOrDefault("MODEL_BASE_URL", DEFAULT_GLM_BASE_URL),
                     nonBlankOrDefault(environment.get("MODEL_NAME"), DEFAULT_GLM_MODEL),
-                    environment.get("GLM_API_KEY"), proxy
+                    environment.get("GLM_API_KEY"), proxy, false
             );
             case OPENAI_COMPATIBLE -> new ModelProviderConfig(
                     OPENAI_COMPATIBLE,
@@ -49,7 +55,13 @@ public final class ModelProviderConfig {
                             "Missing MODEL_BASE_URL for openai-compatible provider"),
                     require(environment.get("MODEL_NAME"),
                             "Missing MODEL_NAME for openai-compatible provider"),
-                    blankToNull(environment.get("MODEL_API_KEY")), proxy
+                    blankToNull(environment.get("MODEL_API_KEY")), proxy, false
+            );
+            case DEEPSEEK -> new ModelProviderConfig(
+                    DEEPSEEK,
+                    nonBlankOrDefault(environment.get("MODEL_BASE_URL"), DEFAULT_DEEPSEEK_BASE_URL),
+                    nonBlankOrDefault(environment.get("MODEL_NAME"), DEFAULT_DEEPSEEK_MODEL),
+                    environment.get("DEEPSEEK_API_KEY"), proxy, true
             );
             default -> throw new IllegalArgumentException(
                     "Unsupported MODEL_PROVIDER: " + provider + " (expected glm or openai-compatible)");
@@ -64,8 +76,12 @@ public final class ModelProviderConfig {
 
     Proxy proxy() { return proxy; }
 
+    boolean deepSeekNonThinking() { return deepSeekNonThinking; }
+
     public String displayProvider() {
-        return GLM.equals(provider) ? "GLM" : "OpenAI-compatible";
+        if (GLM.equals(provider)) return "GLM";
+        if (DEEPSEEK.equals(provider)) return "DeepSeek";
+        return "OpenAI-compatible";
     }
 
     String endpoint() {
@@ -92,7 +108,8 @@ public final class ModelProviderConfig {
     public String toString() {
         return "ModelProviderConfig[provider=" + provider + ", baseUrl=" + baseUrl
                 + ", model=" + model + ", proxy=" + (proxy == null ? "direct" : proxy.address())
-                + ", apiKey=" + (apiKey == null ? "unset" : "[REDACTED]") + "]";
+                + ", apiKey=" + (apiKey == null ? "unset" : "[REDACTED]")
+                + (deepSeekNonThinking ? ", thinking=disabled" : "") + "]";
     }
 
     private static Proxy parseProxy(String value) {

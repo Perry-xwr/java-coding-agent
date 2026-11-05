@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -132,7 +133,8 @@ class ToolRegistryTest {
         ToolRegistry registry = ToolRegistry.withFileTools(tempDir);
 
         JsonNode listedFiles = objectMapper.readTree(registry.execute("list_files", "{}").output());
-        assertEquals("Example.java", listedFiles.get(0).asText());
+        assertEquals("Example.java", listedFiles.path("files").get(0).path("path").asText());
+        assertFalse(listedFiles.path("truncated").asBoolean());
 
         JsonNode foundFiles = objectMapper.readTree(registry.execute(
                 "find_files", "{\"pattern\":\"**/*.java\"}"
@@ -155,9 +157,9 @@ class ToolRegistryTest {
                 "search_code",
                 "{\"keyword\":\"needle\"}"
         ).output());
-        assertEquals("Example.java", matches.get(0).path("file").asText());
-        assertEquals(1, matches.get(0).path("line").asInt());
-        assertEquals("class Example { // needle", matches.get(0).path("content").asText());
+        assertEquals("Example.java", matches.path("matches").get(0).path("file").asText());
+        assertEquals(1, matches.path("matches").get(0).path("line").asInt());
+        assertEquals("class Example { // needle", matches.path("matches").get(0).path("content").asText());
     }
 
     @Test

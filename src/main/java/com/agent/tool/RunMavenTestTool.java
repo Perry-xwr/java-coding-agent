@@ -2,12 +2,21 @@ package com.agent.tool;
 
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
+import com.agent.tool.execution.ProcessEnvironmentProfile;
+import com.agent.llm.LiveTestControl;
+import com.agent.execution.secure.ApprovalDecision;
+import com.agent.execution.secure.ExecutionApprovalPrompt;
+import com.agent.execution.secure.ExecutionRequest;
+import com.agent.execution.secure.HostMavenExecutionApproval;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -15,6 +24,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.Comparator;
+import java.util.stream.Stream;
 import java.util.regex.Pattern;
 
 public final class RunMavenTestTool implements Tool {
@@ -34,6 +51,7 @@ public final class RunMavenTestTool implements Tool {
     private final Duration timeout;
     private final int maxOutputBytes;
     private final MavenDiagnosticParser diagnosticParser = new MavenDiagnosticParser();
+    private final Function<ExecutionApprovalPrompt, ApprovalDecision> approvalRequester;
 
     public RunMavenTestTool(Path workspaceRoot, ProcessRunner processRunner) {
         this(
@@ -42,7 +60,8 @@ public final class RunMavenTestTool implements Tool {
                 workspaceRoot.toAbsolutePath().normalize().resolve(".m2/repository"),
                 new ObjectMapper(),
                 DEFAULT_TIMEOUT,
-                DEFAULT_MAX_OUTPUT_BYTES
+                DEFAULT_MAX_OUTPUT_BYTES,
+                HostMavenExecutionApproval::request
         );
     }
 
@@ -57,7 +76,8 @@ public final class RunMavenTestTool implements Tool {
                 localRepository,
                 new ObjectMapper(),
                 DEFAULT_TIMEOUT,
-                DEFAULT_MAX_OUTPUT_BYTES
+                DEFAULT_MAX_OUTPUT_BYTES,
+                HostMavenExecutionApproval::request
         );
     }
 
@@ -73,7 +93,8 @@ public final class RunMavenTestTool implements Tool {
                 localRepository,
                 objectMapper,
                 DEFAULT_TIMEOUT,
-                DEFAULT_MAX_OUTPUT_BYTES
+                DEFAULT_MAX_OUTPUT_BYTES,
+                HostMavenExecutionApproval::request
         );
     }
 
@@ -84,6 +105,19 @@ public final class RunMavenTestTool implements Tool {
             ObjectMapper objectMapper,
             Duration timeout,
             int maxOutputBytes
+    ) {
+        this(workspaceRoot, processRunner, localRepository, objectMapper, timeout, maxOutputBytes,
+                HostMavenExecutionApproval::request);
+    }
+
+    RunMavenTestTool(
+            Path workspaceRoot,
+            ProcessRunner processRunner,
+            Path localRepository,
+            ObjectMapper objectMapper,
+            Duration timeout,
+            int maxOutputBytes,
+            Function<ExecutionApprovalPrompt, ApprovalDecision> approvalRequester
     ) {
         this.workspaceRoot = Objects.requireNonNull(
                 workspaceRoot,
@@ -100,6 +134,7 @@ public final class RunMavenTestTool implements Tool {
             throw new IllegalArgumentException("maxOutputBytes must be positive");
         }
         this.maxOutputBytes = maxOutputBytes;
+        this.approvalRequester = Objects.requireNonNull(approvalRequester, "approvalRequester must not be null");
     }
 
     @Override
@@ -145,46 +180,136 @@ public final class RunMavenTestTool implements Tool {
         }
         command.add("test");
 
+        String selectedTest = selection.testClass() == null ? "all tests"
+                : selection.testClass() + (selection.testMethod() == null ? "" : "#" + selection.testMethod());
+        String workspaceSnapshot;
+        try {
+            workspaceSnapshot = workspaceSnapshotDigest();
+        } catch (IOException unsafeWorkspace) {
+            return ToolResult.failure(ToolErrorCode.TOOL_EXECUTION_ERROR,
+                    "Maven approval unavailable: workspace could not be safely fingerprinted; no process was started",
+                    Map.of("testStatus", "APPROVAL_UNAVAILABLE", "approvalStatus", "UNAVAILABLE",
+                            "executed", false, "testSummaryAvailable", false));
+        }
+        String digest = requestDigest(command, selectedTest, timeout, maxOutputBytes, workspaceSnapshot);
+        String challenge = UUID.randomUUID().toString().substring(0, 8).toUpperCase(java.util.Locale.ROOT);
+        ExecutionApprovalPrompt approvalPrompt = new ExecutionApprovalPrompt(digest, challenge,
+                ExecutionRequest.Action.MAVEN_TEST,
+                "Windows host workspace=" + workspaceRoot + "; command=" + command,
+                selectedTest, "Host process; no container",
+                "Direct Windows host process; allowlisted environment only; no OS sandbox or network isolation; "
+                        + "timeout=" + timeout.toSeconds() + "s; max output=" + maxOutputBytes + " bytes",
+                "Maven build plugins and tests execute project code with the current Windows user permissions "
+                        + "and may access user files or the network.");
+        ApprovalDecision approval;
+        try {
+            approval = approvalRequester.apply(approvalPrompt);
+        } catch (RuntimeException approvalFailure) {
+            approval = new ApprovalDecision(ApprovalDecision.Status.UNAVAILABLE, digest, "");
+        }
+        if (approval == null || approval.status() == ApprovalDecision.Status.UNAVAILABLE) {
+            return approvalFailure(ToolErrorCode.APPROVAL_UNAVAILABLE, "APPROVAL_UNAVAILABLE",
+                    "Maven execution approval is unavailable; no process was started", digest);
+        }
+        if (approval.status() == ApprovalDecision.Status.DENIED
+                || !digest.equals(approval.requestDigest()) || approval.approvalId().isBlank()) {
+            return approvalFailure(ToolErrorCode.APPROVAL_DENIED, "APPROVAL_DENIED",
+                    "Maven execution was denied; no process was started", digest);
+        }
+        try {
+            if (!workspaceSnapshot.equals(workspaceSnapshotDigest())) {
+                return approvalFailure(ToolErrorCode.APPROVAL_DENIED, "APPROVAL_DENIED",
+                        "Workspace changed after approval; request approval again. No process was started", digest);
+            }
+        } catch (IOException unsafeWorkspace) {
+            return approvalFailure(ToolErrorCode.APPROVAL_UNAVAILABLE, "APPROVAL_UNAVAILABLE",
+                    "Workspace could not be revalidated after approval; no process was started", digest);
+        }
+
         ProcessExecutionResult processResult;
+        Duration effectiveTimeout = LiveTestControl.boundedProcessTimeout(timeout);
+        if (effectiveTimeout != null && effectiveTimeout.isZero()) {
+            return ToolResult.failure(ToolErrorCode.PROCESS_TIMEOUT,
+                    "Live-test deadline is too close to safely start Maven",
+                    Map.of("testStatus", "TIMED_OUT", "approvalStatus", "APPROVED",
+                            "approvalId", approval.approvalId(), "executed", false,
+                            "requestDigest", digest));
+        }
+        if (effectiveTimeout == null) effectiveTimeout = timeout;
         try {
             processResult = processRunner.run(
                     List.copyOf(command),
                     workspaceRoot,
-                    timeout,
-                    maxOutputBytes
+                    effectiveTimeout,
+                    maxOutputBytes,
+                    Map.of(),
+                    ProcessEnvironmentProfile.MAVEN
             );
         } catch (IOException exception) {
             return ToolResult.failure(
                     ToolErrorCode.PROCESS_START_FAILED,
-                    messageOrType(exception)
+                    messageOrType(exception),
+                    Map.of("testStatus", "PROCESS_START_FAILED", "approvalStatus", "APPROVED",
+                            "approvalId", approval.approvalId(), "executed", false,
+                            "requestDigest", digest)
             );
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return ToolResult.failure(
-                    ToolErrorCode.TOOL_EXECUTION_ERROR,
-                    "Maven test execution was interrupted"
+                    ToolErrorCode.PROCESS_CANCELLED,
+                    "Maven test execution was interrupted",
+                    Map.of("testStatus", "CANCELLED", "approvalStatus", "APPROVED",
+                            "approvalId", approval.approvalId(), "executed", true,
+                            "requestDigest", digest)
             );
         }
 
-        Map<String, Object> metadata = processMetadata(processResult, selection);
+        MavenTestSummary summary = MavenTestSummary.parse(processResult.output());
+        String testStatus = testStatus(processResult, summary);
+        Map<String, Object> metadata = processMetadata(processResult, selection, approval, digest, summary,
+                testStatus);
         if (processResult.timedOut()) {
             return ToolResult.failureWithOutput(
                     ToolErrorCode.PROCESS_TIMEOUT,
-                    "Maven tests exceeded timeout of " + timeout.toSeconds() + " seconds",
+                    "Maven tests exceeded timeout of " + effectiveTimeout.toSeconds() + " seconds",
                     processResult.output(),
                     metadata
             );
         }
-        if (processResult.exitCode() != 0) {
+        if ("TEST_PASSED".equals(testStatus)) {
+            return ToolResult.success(processResult.output(), metadata);
+        }
+        if ("BUILD_FAILED".equals(testStatus) || "TEST_FAILED".equals(testStatus)
+                || "TEST_RUNTIME_ERROR".equals(testStatus)
+                || "DEPENDENCY_UNAVAILABLE".equals(testStatus)
+                || "BUILD_CONFIGURATION_FAILURE".equals(testStatus)
+                || processResult.exitCode() != 0) {
             metadata.putAll(diagnosticParser.parse(processResult.output()).metadata());
-            return ToolResult.failureWithOutput(
-                    ToolErrorCode.TEST_FAILED,
-                    "Maven tests failed with exit code " + processResult.exitCode(),
-                    processResult.output(),
-                    metadata
-            );
+            if ("TEST_RUNTIME_ERROR".equals(testStatus)) {
+                metadata.put("diagnosticType", DiagnosticType.TEST_RUNTIME.name());
+                metadata.put("diagnosticSummary", "One or more tests ended with runtime errors");
+            }
+            List<String> failedTests = diagnosticParser.failureIdentifiers(processResult.output());
+            if (!failedTests.isEmpty()) metadata.put("failedTests", failedTests);
         }
-        return ToolResult.success(processResult.output(), metadata);
+        return switch (testStatus) {
+            case "TEST_FAILED" -> ToolResult.failureWithOutput(ToolErrorCode.TEST_FAILED,
+                    "Maven tests failed", processResult.output(), metadata);
+            case "TEST_RUNTIME_ERROR" -> ToolResult.failureWithOutput(ToolErrorCode.TEST_RUNTIME_ERROR,
+                    "Maven tests reported runtime errors", processResult.output(), metadata);
+            case "BUILD_FAILED" -> ToolResult.failureWithOutput(ToolErrorCode.BUILD_FAILED,
+                    "Maven build failed before reliable test completion", processResult.output(), metadata);
+            case "DEPENDENCY_UNAVAILABLE" -> ToolResult.failureWithOutput(ToolErrorCode.DEPENDENCY_UNAVAILABLE,
+                    "Maven dependencies or repository were unavailable", processResult.output(), metadata);
+            case "BUILD_CONFIGURATION_FAILURE" -> ToolResult.failureWithOutput(
+                    ToolErrorCode.BUILD_CONFIGURATION_FAILURE,
+                    "Maven build configuration or plugin setup failed", processResult.output(), metadata);
+            case "TESTS_SKIPPED" -> ToolResult.failureWithOutput(ToolErrorCode.TESTS_SKIPPED,
+                    "Maven completed but all reported tests were skipped", processResult.output(), metadata);
+            default -> ToolResult.failureWithOutput(ToolErrorCode.TEST_SUMMARY_UNAVAILABLE,
+                    "Maven did not provide a reliable test summary; test success is unknown",
+                    processResult.output(), metadata);
+        };
     }
 
     private Selection parseSelection(String arguments) {
@@ -231,13 +356,30 @@ public final class RunMavenTestTool implements Tool {
 
     private static Map<String, Object> processMetadata(
             ProcessExecutionResult result,
-            Selection selection
+            Selection selection,
+            ApprovalDecision approval,
+            String digest,
+            MavenTestSummary summary,
+            String testStatus
     ) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("exitCode", result.exitCode());
         metadata.put("durationMs", result.durationMs());
         metadata.put("timedOut", result.timedOut());
         metadata.put("outputTruncated", result.outputTruncated());
+        metadata.put("approvalStatus", approval.status().name());
+        metadata.put("approvalId", approval.approvalId());
+        metadata.put("requestDigest", digest);
+        metadata.put("executed", true);
+        metadata.put("testStatus", testStatus);
+        metadata.put("testSummaryAvailable", summary.available());
+        if (summary.available()) {
+            metadata.put("testsRun", summary.total());
+            metadata.put("testsPassed", summary.passed());
+            metadata.put("testsFailed", summary.failures());
+            metadata.put("testsErrors", summary.errors());
+            metadata.put("testsSkipped", summary.skipped());
+        }
         if (selection.testClass() != null) {
             metadata.put("testClass", selection.testClass());
         }
@@ -245,6 +387,108 @@ public final class RunMavenTestTool implements Tool {
             metadata.put("testMethod", selection.testMethod());
         }
         return metadata;
+    }
+
+    private static ToolResult approvalFailure(ToolErrorCode code, String status, String message, String digest) {
+        return ToolResult.failure(code, message, Map.of("testStatus", status,
+                "approvalStatus", status.equals("APPROVAL_DENIED") ? "DENIED" : "UNAVAILABLE",
+                "executed", false, "testSummaryAvailable", false, "requestDigest", digest));
+    }
+
+    private static String testStatus(ProcessExecutionResult result, MavenTestSummary summary) {
+        if (result.timedOut()) return "TIMED_OUT";
+        MavenDiagnostic diagnostic = new MavenDiagnosticParser().parse(result.output());
+        if (summary.available()) {
+            if (summary.errors() > 0) return "TEST_RUNTIME_ERROR";
+            if (summary.failures() > 0) return "TEST_FAILED";
+            if (summary.total() == 0) return "TEST_SUMMARY_UNAVAILABLE";
+            if (summary.skipped() == summary.total()) return "TESTS_SKIPPED";
+            if (result.exitCode() == 0 && summary.passed() > 0 && !result.outputTruncated()) return "TEST_PASSED";
+            if (result.exitCode() != 0) {
+                if (diagnostic.type() == DiagnosticType.DEPENDENCY) return "DEPENDENCY_UNAVAILABLE";
+                if (diagnostic.type() == DiagnosticType.BUILD_CONFIGURATION) return "BUILD_CONFIGURATION_FAILURE";
+                return "BUILD_FAILED";
+            }
+        } else if (result.exitCode() != 0) {
+            if (diagnostic.type() == DiagnosticType.DEPENDENCY) return "DEPENDENCY_UNAVAILABLE";
+            if (diagnostic.type() == DiagnosticType.BUILD_CONFIGURATION) return "BUILD_CONFIGURATION_FAILURE";
+            DiagnosticType type = diagnostic.type();
+            if (type == DiagnosticType.COMPILATION || type == DiagnosticType.SYNTAX) return "BUILD_FAILED";
+            if (type == DiagnosticType.ASSERTION) return "TEST_FAILED";
+            if (type == DiagnosticType.DEPENDENCY) return "DEPENDENCY_UNAVAILABLE";
+            if (type == DiagnosticType.BUILD_CONFIGURATION) return "BUILD_CONFIGURATION_FAILURE";
+            if (type == DiagnosticType.TEST_RUNTIME) return "TEST_RUNTIME_ERROR";
+        }
+        return "TEST_SUMMARY_UNAVAILABLE";
+    }
+
+    private String requestDigest(List<String> command, String selectedTest, Duration configuredTimeout,
+                                 int outputLimit, String workspaceSnapshot) {
+        String canonical = "run_maven_test\n" + workspaceRoot + "\n" + command + "\n" + selectedTest
+                + "\n" + configuredTimeout.toMillis() + "\n" + outputLimit
+                + "\nMAVEN_HOST_ALLOWLIST_PROFILE_V1\n" + workspaceSnapshot;
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
+    }
+
+    private String workspaceSnapshotDigest() throws IOException {
+        if (!Files.isDirectory(workspaceRoot, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(workspaceRoot)) {
+            throw new IOException("Workspace root is not a safe directory");
+        }
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
+        List<Path> files;
+        try (Stream<Path> paths = Files.walk(workspaceRoot)) {
+            files = paths.filter(path -> !path.equals(workspaceRoot))
+                    .filter(path -> !isExcludedVcsOrRepositoryPath(path))
+                    .limit(20_001)
+                    .sorted(Comparator.comparing(path -> workspaceRoot.relativize(path).toString()))
+                    .toList();
+        }
+        if (files.size() > 20_000) throw new IOException("Workspace has too many entries to fingerprint safely");
+        long totalBytes = 0;
+        for (Path path : files) {
+            if (Files.isSymbolicLink(path)) throw new IOException("Workspace contains a symbolic link");
+            BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            String relative = workspaceRoot.relativize(path).toString().replace('\\', '/');
+            digest.update(relative.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            if (attributes.isDirectory()) {
+                digest.update((byte) 'D');
+                continue;
+            }
+            if (!attributes.isRegularFile()) throw new IOException("Workspace contains a non-regular file");
+            totalBytes = Math.addExact(totalBytes, attributes.size());
+            if (totalBytes > 128L * 1024 * 1024) {
+                throw new IOException("Workspace exceeds the fingerprint size limit");
+            }
+            digest.update((byte) 'F');
+            try (var input = Files.newInputStream(path)) {
+                byte[] buffer = new byte[8192];
+                int count;
+                while ((count = input.read(buffer)) >= 0) digest.update(buffer, 0, count);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
+    private boolean isExcludedVcsOrRepositoryPath(Path path) {
+        Path relative = workspaceRoot.relativize(path);
+        for (Path segment : relative) {
+            String name = segment.toString();
+            if (name.equals(".git") || name.equals(".m2")) return true;
+        }
+        return false;
     }
 
     private static String mavenExecutable() {

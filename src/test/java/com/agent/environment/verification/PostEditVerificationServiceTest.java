@@ -105,13 +105,15 @@ class PostEditVerificationServiceTest {
     @Test
     void nonCodeAndMavenJavaFilesAreNotApplicable() throws Exception {
         Files.writeString(workspace.resolve("README.md"), "text");
-        Files.writeString(workspace.resolve("App.java"), "class App {}\n");
         assertEquals(VerificationStatus.NOT_APPLICABLE,
                 service((c, d, t, l) -> failIfCalled()).verify("README.md", 1).status());
 
         Files.writeString(workspace.resolve("pom.xml"), "<project/>");
+        Path source = workspace.resolve("src/main/java/App.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source, "class App {}\n");
         assertEquals(VerificationStatus.NOT_APPLICABLE,
-                service((c, d, t, l) -> failIfCalled()).verify("App.java", 2).status());
+                service((c, d, t, l) -> failIfCalled()).verify("src/main/java/App.java", 2).status());
     }
 
     @Test
@@ -233,6 +235,48 @@ class PostEditVerificationServiceTest {
             assertEquals(List.of(), paths.filter(path -> path.getFileName().toString()
                     .endsWith(".class")).toList());
         }
+    }
+
+    @Test
+    void mavenRootJavaFileIsCompiledDirectlyWithoutPollutingWorkspace() throws Exception {
+        Files.writeString(workspace.resolve("pom.xml"), "<project><modelVersion>4.0.0</modelVersion></project>");
+        Path source = workspace.resolve("HelloWorld.java");
+        Files.writeString(source, "public class HelloWorld { public static void main(String[] args) { system.out.println(\"Hello World\"); } }\n");
+        PostEditVerificationService service = service(new com.agent.tool.execution.DefaultProcessRunner());
+
+        VerificationResult invalid = service.verify("HelloWorld.java", 1);
+
+        assertEquals(VerificationStatus.FAIL, invalid.status());
+        assertEquals("java-javac", invalid.verifierId());
+        assertTrue(invalid.diagnosticSummary().contains("system"));
+        Files.writeString(source, "public class HelloWorld { public static void main(String[] args) { System.out.println(\"Hello World\"); } }\n");
+
+        VerificationResult valid = service.verify("HelloWorld.java", 2);
+
+        assertEquals(VerificationStatus.PASS, valid.status());
+        try (var paths = Files.walk(workspace)) {
+            assertFalse(paths.anyMatch(path -> path.getFileName().toString().endsWith(".class")
+                    || path.getFileName().toString().startsWith("agent-javac-verify-")));
+        }
+    }
+
+    @Test
+    void defaultMavenSourceRemainsDelegatedAndCustomizedSourceLayoutIsUnavailable() throws Exception {
+        Files.writeString(workspace.resolve("pom.xml"), "<project><modelVersion>4.0.0</modelVersion></project>");
+        Path source = workspace.resolve("src/main/java/App.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source, "class App {}\n");
+        PostEditVerificationService service = service(new com.agent.tool.execution.DefaultProcessRunner());
+
+        VerificationResult standardSource = service.verify("src/main/java/App.java", 1);
+        assertEquals(VerificationStatus.NOT_APPLICABLE, standardSource.status());
+        assertEquals("java-maven-project", standardSource.verifierId());
+
+        Files.writeString(workspace.resolve("pom.xml"), "<project><build><sourceDirectory>custom-src</sourceDirectory></build></project>");
+        VerificationResult uncertainCustomLayout = service.verify("src/main/java/App.java", 2);
+        assertEquals(VerificationStatus.UNAVAILABLE, uncertainCustomLayout.status());
+        assertEquals("maven-source-scope-unknown", uncertainCustomLayout.verifierId());
+        assertTrue(uncertainCustomLayout.unavailableReason().contains("cannot be established"));
     }
 
     private PostEditVerificationService service(ProcessRunner runner) {

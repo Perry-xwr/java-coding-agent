@@ -78,23 +78,26 @@ class EnvironmentToolAvailabilityTest {
     }
 
     @Test
-    void availabilityIsRecomputedAfterRootPomIsCreatedDuringSameAgentRun() throws Exception {
+    void availabilityIsRecomputedButMavenFailsClosedWithoutInteractiveApproval() throws Exception {
         AtomicInteger mavenExecutions = new AtomicInteger();
         LocalWorkspaceEnvironment environment = environment(temporary, recordingRunner(mavenExecutions));
         ScriptedClient client = new ScriptedClient(
                 call("create_file", Map.of("path", "pom.xml", "content", "<project/>\n")),
                 call("run_maven_test", Map.of()),
-                new LLMResponse("Maven verification completed.", List.of()));
+                new LLMResponse("Maven tests passed.", List.of()),
+                new LLMResponse("I created the POM, but Maven verification requires interactive approval.", List.of()));
         Agent agent = agent(client, environment);
 
         AgentRunResult result = agent.runWithTrajectory("Create a minimal pom.xml and verify the project.");
 
         assertTrue(result.trajectory().completed());
-        assertEquals(3, client.advertisedTools.size());
+        assertEquals(4, client.advertisedTools.size());
         assertFalse(hasTool(client.advertisedTools.get(0), "run_maven_test"));
         assertTrue(hasTool(client.advertisedTools.get(1), "run_maven_test"));
-        assertEquals(1, mavenExecutions.get());
+        assertEquals(0, mavenExecutions.get());
         assertTrue(Files.isRegularFile(temporary.resolve("pom.xml")));
+        assertTrue(result.trajectory().steps().stream().anyMatch(step -> step.toolResult() != null
+                && step.toolResult().errorCode() == ToolErrorCode.APPROVAL_UNAVAILABLE));
     }
 
     @Test
@@ -175,7 +178,7 @@ class EnvironmentToolAvailabilityTest {
     }
 
     @Test
-    void rootPomToolInvocationStillExecutesNormally() throws Exception {
+    void rootPomToolInvocationFailsClosedWithoutInteractiveApproval() throws Exception {
         Files.writeString(temporary.resolve("pom.xml"), "<project/>\n");
         AtomicInteger mavenExecutions = new AtomicInteger();
         LocalWorkspaceEnvironment environment = environment(temporary, recordingRunner(mavenExecutions));
@@ -189,9 +192,9 @@ class EnvironmentToolAvailabilityTest {
 
         assertTrue(result.trajectory().completed());
         assertTrue(hasTool(client.advertisedTools.get(0), "run_maven_test"));
-        assertEquals(1, mavenExecutions.get());
+        assertEquals(0, mavenExecutions.get());
         assertTrue(result.trajectory().steps().stream().anyMatch(step -> step.toolResult() != null
-                && step.toolResult().success() && "BUILD SUCCESS".equals(step.toolResult().output())));
+                && step.toolResult().errorCode() == ToolErrorCode.APPROVAL_UNAVAILABLE));
     }
 
     private static Agent agent(LLMClient client, LocalWorkspaceEnvironment environment) {

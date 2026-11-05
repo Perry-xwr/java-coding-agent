@@ -6,6 +6,7 @@ import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
 import com.agent.tool.ToolErrorCode;
 import com.agent.tool.ToolRegistry;
+import com.agent.tool.TestingToolRegistries;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
 import com.agent.trajectory.TrajectoryJsonWriter;
@@ -37,7 +38,8 @@ class CodingLoopTest {
                 "int add(int a, int b) { return a - b; }\n"
         );
         QueueProcessRunner runner = new QueueProcessRunner(List.of(
-                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 25)
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 25)
         ));
         FakeLLMClient llm = new FakeLLMClient(List.of(
                 toolResponse("read", "read_file", "{\"path\":\"Calculator.java\"}"),
@@ -50,7 +52,7 @@ class CodingLoopTest {
                 toolResponse("test", "run_maven_test", "{\"testClass\":\"CalculatorTest\"}"),
                 new LLMResponse("Fixed and tested.", List.of())
         ));
-        Agent agent = new Agent(llm, ToolRegistry.withCodingTools(workspace, runner));
+        Agent agent = new Agent(llm, TestingToolRegistries.withCodingTools(workspace, runner, workspace.resolve(".m2")));
 
         AgentRunResult result = agent.runWithTrajectory("Fix add() and make the test pass.");
 
@@ -75,8 +77,11 @@ class CodingLoopTest {
                 "int add(int a, int b) { return a - b; }\n"
         );
         QueueProcessRunner runner = new QueueProcessRunner(List.of(
-                new ProcessExecutionResult(1, false, "expected 5 but was 6", false, 30),
-                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 20)
+                new ProcessExecutionResult(1, false,
+                        "Tests run: 1, Failures: 1, Errors: 0, Skipped: 0\n" +
+                                "[ERROR] bench.CalculatorTest.adds -- expected: <5> but was: <6>", false, 30),
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 20)
         ));
         FakeLLMClient llm = new FakeLLMClient(List.of(
                 toolResponse("read", "read_file", "{\"path\":\"Calculator.java\"}"),
@@ -97,7 +102,7 @@ class CodingLoopTest {
                 toolResponse("test-pass", "run_maven_test", "{\"testClass\":\"CalculatorTest\"}"),
                 new LLMResponse("Corrected after the failed test.", List.of())
         ));
-        Agent agent = new Agent(llm, ToolRegistry.withCodingTools(workspace, runner));
+        Agent agent = new Agent(llm, TestingToolRegistries.withCodingTools(workspace, runner, workspace.resolve(".m2")));
 
         AgentRunResult result = agent.runWithTrajectory("Fix add() and make the test pass.");
         List<AgentStep> toolSteps = result.trajectory().steps().stream()
@@ -119,13 +124,13 @@ class CodingLoopTest {
         );
         assertFalse(toolSteps.get(3).toolResult().success());
         assertEquals(ToolErrorCode.TEST_FAILED, toolSteps.get(3).toolResult().errorCode());
-        assertEquals("expected 5 but was 6", toolSteps.get(3).toolResult().output());
+        assertTrue(toolSteps.get(3).toolResult().output().contains("expected: <5> but was: <6>"));
         assertTrue(toolSteps.get(7).toolResult().success());
         assertTrue(Files.readString(source).contains("a + b"));
         assertTrue(agent.history().stream().anyMatch(
                 message -> message.role().equals("tool")
                         && message.content().contains("TEST_FAILED")
-                        && message.content().contains("expected 5 but was 6")
+                        && message.content().contains("expected: <5> but was: <6>")
         ));
 
         Path trajectoryFile = new TrajectoryJsonWriter(

@@ -4,6 +4,7 @@ import com.agent.llm.LLMClient;
 import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
+import com.agent.llm.LiveTestControlException;
 import com.agent.tool.ToolErrorCode;
 import com.agent.tool.ToolRegistry;
 import org.junit.jupiter.api.Test;
@@ -159,6 +160,23 @@ class AgentTrajectoryTest {
         assertFalse(trajectory.completed());
         assertEquals(AgentActionType.ERROR, trajectory.steps().get(0).actionType());
         assertEquals("provider unavailable", trajectory.steps().get(0).errorMessage());
+    }
+
+    @Test
+    void reportsExplicitRequestBudgetTerminationWithoutRetrying() {
+        int[] calls = {0};
+        LLMClient cappedClient = messages -> {
+            calls[0]++;
+            throw new LiveTestControlException(LiveTestControlException.Code.REQUEST_BUDGET_EXCEEDED,
+                    "REQUEST_BUDGET_EXCEEDED: test cap reached");
+        };
+        AgentRunResult result = new Agent(cappedClient, new ToolRegistry()).runWithTrajectory("question");
+
+        assertEquals(1, calls[0]);
+        assertEquals(TerminationReason.REQUEST_BUDGET_EXCEEDED, result.trajectory().terminationReason());
+        assertFalse(result.trajectory().completed());
+        assertEquals("REQUEST_BUDGET_EXCEEDED: test cap reached",
+                result.trajectory().steps().get(0).errorMessage());
     }
 
     private static final class FakeLLMClient implements LLMClient {

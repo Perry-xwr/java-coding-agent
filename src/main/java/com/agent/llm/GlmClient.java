@@ -1,17 +1,19 @@
 package com.agent.llm;
 
+import com.agent.diagnostics.LiveTestDiagnostics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
+import okhttp3.Authenticator;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 
-import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.ConnectException;
 import java.net.Proxy;
@@ -35,6 +37,7 @@ public class GlmClient implements StreamingLlmClient {
     private final String model;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final LiveTestControl liveTestControl;
 
     public GlmClient() {
         this(defaultGlmConfig());
@@ -42,11 +45,21 @@ public class GlmClient implements StreamingLlmClient {
 
     private GlmClient(ModelProviderConfig config) {
         this(requireApiKey(config), config.endpoint(), config.model(),
-                createHttpClient(config.proxy(), true), new ObjectMapper());
+                createHttpClient(config.proxy(), LiveTestControl.processInstanceIfEnabled() == null,
+                        LiveTestControl.processInstanceIfEnabled()), new ObjectMapper());
+    }
+
+    static GlmClient configuredForLiveTest(String apiKey, String endpoint, String model,
+                                           Proxy proxy, LiveTestControl control) {
+        return new GlmClient(apiKey, endpoint, model,
+                createHttpClient(proxy, false, control), new ObjectMapper());
     }
 
     /** Benchmark-only client: one logical request maps to one OkHttp attempt. */
     public static GlmClient forBenchmark() {
+        if (LiveTestControl.enabled()) {
+            throw new IllegalStateException("Benchmark clients are disabled in explicit live-test mode");
+        }
         ModelProviderConfig config = defaultGlmConfig();
         return new GlmClient(requireApiKey(config), config.endpoint(), config.model(),
                 createHttpClient(config.proxy(), false), new ObjectMapper());
@@ -69,6 +82,7 @@ public class GlmClient implements StreamingLlmClient {
         this.model = requireNonBlank(model, "model");
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.liveTestControl = LiveTestControl.processInstanceIfEnabled();
     }
 
     @Override
@@ -79,28 +93,48 @@ public class GlmClient implements StreamingLlmClient {
     @Override
     public LLMResponse chat(List<Message> messages, List<ToolDefinition> tools) throws IOException {
         Request request = buildRequest(messages, tools, false);
-
-        try (Response response = httpClient.newCall(request).execute()) {
+        ModelRequestTelemetry.RequestHandle usageHandle = ModelRequestTelemetry.beginRequest(
+                "GLM", model, endpoint, messages, tools,
+                request.body() == null ? 0 : request.body().contentLength());
+        okhttp3.Call call = httpClient.newCall(request);
+        try {
+            configureLiveCallTimeout(call);
+        } catch (IOException exception) {
+            ModelRequestTelemetry.fail(usageHandle, null);
+            LiveTestDiagnostics.recordProviderFailure(exception);
+            throw liveTestOrTransportError(exception);
+        }
+        Integer responseStatus = null;
+        try (Response response = call.execute()) {
+            responseStatus = response.code();
             if (isDebugEnabled()) {
                 System.out.println("GLM HTTP status: " + response.code());
             }
             ResponseBody body = response.body();
             String responseJson = body == null ? "" : body.string();
             if (!response.isSuccessful()) {
+                ModelRequestTelemetry.fail(usageHandle, response.code());
                 String safeBody = redactApiKey(responseJson);
-                System.err.println("GLM error body: " + safeBody);
-                throw new IOException("GLM HTTP provider error " + response.code() + ": " + safeBody);
+                if (liveTestControl == null) System.err.println("GLM error body: " + safeBody);
+                throw new IOException("GLM HTTP provider error " + response.code()
+                        + (liveTestControl == null ? ": " + safeBody : ""));
             }
             if (responseJson.isBlank()) {
                 throw new IOException("GLM returned an empty response body");
             }
             try {
-                return parseResponse(responseJson);
+                LLMResponse parsed = parseResponse(responseJson);
+                parsed = parsed.withRequestUsage(ModelRequestTelemetry.complete(
+                        usageHandle, response.code(), parsed.providerUsage()));
+                LiveTestDiagnostics.recordModelResponse(!parsed.toolCalls().isEmpty(), parsed.toolCalls());
+                return parsed;
             } catch (JsonProcessingException exception) {
                 throw new IOException("GLM response parse error");
             }
         } catch (IOException exception) {
-            throw classifyTransportError(exception);
+            ModelRequestTelemetry.fail(usageHandle, responseStatus);
+            LiveTestDiagnostics.recordProviderFailure(exception);
+            throw liveTestOrTransportError(exception);
         }
     }
 
@@ -112,50 +146,79 @@ public class GlmClient implements StreamingLlmClient {
     ) throws IOException {
         Objects.requireNonNull(listener, "listener must not be null");
         Request request = buildRequest(messages, tools, true);
-        try (Response response = httpClient.newCall(request).execute()) {
+        ModelRequestTelemetry.RequestHandle usageHandle = ModelRequestTelemetry.beginRequest(
+                "GLM", model, endpoint, messages, tools,
+                request.body() == null ? 0 : request.body().contentLength());
+        okhttp3.Call call = httpClient.newCall(request);
+        try {
+            configureLiveCallTimeout(call);
+        } catch (IOException exception) {
+            ModelRequestTelemetry.fail(usageHandle, null);
+            LiveTestDiagnostics.recordProviderFailure(exception);
+            throw liveTestOrTransportError(exception);
+        }
+        Integer responseStatus = null;
+        try (Response response = call.execute()) {
+            responseStatus = response.code();
             if (isDebugEnabled()) {
                 System.out.println("GLM HTTP status: " + response.code());
             }
             ResponseBody body = response.body();
             if (!response.isSuccessful()) {
+                ModelRequestTelemetry.fail(usageHandle, response.code());
                 String errorBody = body == null ? "" : body.string();
                 String safeBody = redactApiKey(errorBody);
-                System.err.println("GLM error body: " + safeBody);
+                if (liveTestControl == null) System.err.println("GLM error body: " + safeBody);
                 throw new IOException("GLM streaming request failed with HTTP " + response.code()
-                        + ": " + safeBody);
+                        + (liveTestControl == null ? ": " + safeBody : ""));
             }
             if (body == null) {
                 throw new IOException("GLM returned an empty streaming response body");
             }
             StreamingResponseAccumulator accumulator =
-                    new StreamingResponseAccumulator(objectMapper, listener);
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    body.byteStream(), StandardCharsets.UTF_8))) {
-                StringBuilder eventData = new StringBuilder();
-                String line;
-                boolean done = false;
-                while (!done && (line = reader.readLine()) != null) {
-                    if (line.isEmpty()) {
-                        done = processEvent(eventData, accumulator);
-                    } else if (line.startsWith("data:")) {
-                        if (!eventData.isEmpty()) {
-                            eventData.append('\n');
+                    new StreamingResponseAccumulator(objectMapper, listener, "GLM", apiKey);
+            try {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                        body.byteStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder eventData = new StringBuilder();
+                    String line;
+                    boolean done = false;
+                    while (!done && (line = reader.readLine()) != null) {
+                        if (line.isEmpty()) {
+                            done = processEvent(eventData, accumulator);
+                        } else if (line.startsWith("data:")) {
+                            if (!eventData.isEmpty()) eventData.append('\n');
+                            eventData.append(line.substring(5).stripLeading());
                         }
-                        eventData.append(line.substring(5).stripLeading());
+                    }
+                    if (!done && !eventData.isEmpty()) done = processEvent(eventData, accumulator);
+                    if (!done) {
+                        throw new IOException("GLM streaming response ended before data: [DONE]");
                     }
                 }
-                if (!done && !eventData.isEmpty()) {
-                    processEvent(eventData, accumulator);
-                }
-            }
-            try {
-                return accumulator.finish();
+                LLMResponse parsed = accumulator.finish().withRequestUsage(
+                        ModelRequestTelemetry.complete(usageHandle, response.code(),
+                                accumulator.providerUsage()));
+                LiveTestDiagnostics.recordModelResponse(!parsed.toolCalls().isEmpty(), parsed.toolCalls());
+                return parsed;
             } catch (IOException exception) {
                 throw exception;
             }
         } catch (IOException exception) {
-            throw classifyTransportError(exception);
+            ModelRequestTelemetry.fail(usageHandle, responseStatus);
+            LiveTestDiagnostics.recordProviderFailure(exception);
+            throw liveTestOrTransportError(exception);
         }
+    }
+
+    private static boolean processEvent(StringBuilder eventData, StreamingResponseAccumulator accumulator)
+            throws IOException {
+        if (eventData.isEmpty()) return false;
+        String data = eventData.toString();
+        eventData.setLength(0);
+        if ("[DONE]".equals(data)) return true;
+        accumulator.accept(data);
+        return false;
     }
 
     private Request buildRequest(
@@ -185,22 +248,6 @@ public class GlmClient implements StreamingLlmClient {
             builder.header("Accept", "text/event-stream");
         }
         return builder.build();
-    }
-
-    private static boolean processEvent(
-            StringBuilder eventData,
-            StreamingResponseAccumulator accumulator
-    ) throws IOException {
-        if (eventData.isEmpty()) {
-            return false;
-        }
-        String data = eventData.toString();
-        eventData.setLength(0);
-        if ("[DONE]".equals(data)) {
-            return true;
-        }
-        accumulator.accept(data);
-        return false;
     }
 
     private static Map<String, Object> serializeTool(ToolDefinition tool) {
@@ -239,7 +286,7 @@ public class GlmClient implements StreamingLlmClient {
                 ));
             }
         }
-        return new LLMResponse(content, toolCalls);
+        return new LLMResponse(content, toolCalls, ProviderTokenUsage.fromJson(root.path("usage")));
     }
 
     private static ModelProviderConfig defaultGlmConfig() {
@@ -268,7 +315,32 @@ public class GlmClient implements StreamingLlmClient {
         return builder.build();
     }
 
+    private static OkHttpClient createHttpClient(Proxy proxy, boolean retryOnConnectionFailure,
+                                                  LiveTestControl control) {
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                .retryOnConnectionFailure(retryOnConnectionFailure)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .callTimeout(5, TimeUnit.MINUTES)
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(120, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS);
+        if (control != null) builder.authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE);
+        if (proxy != null) builder.proxy(proxy);
+        if (control != null) {
+            builder.addInterceptor(LiveTestControl.requestAttemptInterceptor(control));
+            builder.addNetworkInterceptor(LiveTestControl.networkExchangeInterceptor(control));
+        }
+        return builder.build();
+    }
+
+    private void configureLiveCallTimeout(okhttp3.Call call) throws IOException {
+        if (liveTestControl != null) liveTestControl.configureCallTimeout(call);
+    }
+
     OkHttpClient httpClientForTesting() { return httpClient; }
+
+    LiveTestControl liveTestControlForTesting() { return liveTestControl; }
 
     private String redactApiKey(String value) {
         return apiKey.isEmpty() ? value : value.replace(apiKey, "[REDACTED]");
@@ -293,6 +365,18 @@ public class GlmClient implements StreamingLlmClient {
             }
         }
         return exception;
+    }
+
+    private static IOException liveTestOrTransportError(IOException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof LiveTestControlException controlException) return controlException;
+        }
+        LiveTestControl control = LiveTestControl.processInstanceIfEnabled();
+        if (control != null && control.remainingNanos() == 0) {
+            return new LiveTestControlException(LiveTestControlException.Code.TASK_TIMEOUT,
+                    "TASK_TIMEOUT: five-minute live-test deadline expired.");
+        }
+        return classifyTransportError(exception);
     }
 
     private static boolean isDebugEnabled() {

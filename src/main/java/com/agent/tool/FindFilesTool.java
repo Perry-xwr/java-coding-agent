@@ -26,7 +26,7 @@ import java.util.Set;
 public final class FindFilesTool implements Tool {
     static final int MAX_RESULTS = 100;
     private static final Set<String> IGNORED_DIRECTORIES = Set.of(
-            ".git", "target", ".m2", ".gradle", "node_modules"
+            ".git", "target", ".m2", ".gradle", "node_modules", ".agent-cli"
     );
 
     private final WorkspacePathResolver pathResolver;
@@ -150,6 +150,7 @@ public final class FindFilesTool implements Tool {
     ) {
         try {
             Path realPath = path.toRealPath();
+            if (WorkspacePathResolver.isPrivateRuntimePath(root, realPath)) return;
             if (!realPath.startsWith(root)) {
                 return;
             }

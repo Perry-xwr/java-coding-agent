@@ -16,6 +16,10 @@ interface AtomicTextFileWriter {
         return AtomicTextFileWriter::writeUtf8;
     }
 
+    static AtomicTextFileWriter strictlyAtomicUtf8() {
+        return AtomicTextFileWriter::writeUtf8StrictlyAtomically;
+    }
+
     static AtomicTextFileWriter createUtf8() {
         return AtomicTextFileWriter::createUtf8;
     }
@@ -54,6 +58,19 @@ interface AtomicTextFileWriter {
             } catch (AtomicMoveNotSupportedException exception) {
                 Files.move(temporary, target);
             }
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    private static void writeUtf8StrictlyAtomically(Path target, String content) throws IOException {
+        Path temporary = Files.createTempFile(target.getParent(), ".agent-context-patch-", ".tmp");
+        try {
+            try (BufferedWriter writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8)) {
+                writer.write(content);
+                writer.flush();
+            }
+            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } finally {
             Files.deleteIfExists(temporary);
         }

@@ -2,6 +2,7 @@ package com.agent.agent;
 
 import com.agent.environment.LocalWorkspaceEnvironment;
 import com.agent.environment.verification.CodeVerifier;
+import com.agent.environment.verification.BuiltInCodeVerifiers;
 import com.agent.environment.verification.VerificationResult;
 import com.agent.environment.verification.VerificationStatus;
 import com.agent.environment.verification.VerifierRegistry;
@@ -10,6 +11,7 @@ import com.agent.llm.LLMResponse;
 import com.agent.llm.Message;
 import com.agent.llm.ToolCall;
 import com.agent.tool.ToolRegistry;
+import com.agent.tool.ToolErrorCode;
 import com.agent.tool.execution.DefaultProcessRunner;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
@@ -183,7 +185,9 @@ class PostEditVerificationAgentTest {
     @Test
     void MavenWorkspaceUsesExistingProjectVerificationWithoutSecondCompilerPass() throws Exception {
         Files.writeString(workspace.resolve("pom.xml"), "<project/>\n");
-        Files.writeString(workspace.resolve("App.java"), "class App { String value = \"old\"; }\n");
+        Path app = workspace.resolve("src/main/java/App.java");
+        Files.createDirectories(app.getParent());
+        Files.writeString(app, "class App { String value = \"old\"; }\n");
         List<List<String>> commands = new ArrayList<>();
         ProcessRunner fakeProcess = (command, cwd, timeout, outputLimit) -> {
             commands.add(command);
@@ -192,16 +196,17 @@ class PostEditVerificationAgentTest {
         ToolRegistry tools = ToolRegistry.withCliCodingTools(workspace, fakeProcess, workspace.resolve(".m2"));
         LocalWorkspaceEnvironment environment = new LocalWorkspaceEnvironment(workspace, tools);
         Script script = new Script(
-                call("apply_patch", Map.of("path", "App.java", "oldText", "old", "newText", "new")),
+                call("apply_patch", Map.of("path", "src/main/java/App.java", "oldText", "old", "newText", "new")),
                 call("run_maven_test", Map.of()),
-                finalAnswer("Maven verified."));
+                finalAnswer("Maven tests passed."),
+                finalAnswer("Maven tests passed."));
         Agent agent = new Agent(script, environment, "test", 6, TaskMode.CODE_MODIFICATION,
                 true, false, AgentEventListener.NO_OP, false);
 
         AgentRunResult result = agent.runWithTrajectory("Update App.java");
 
         assertTrue(result.trajectory().completed());
-        assertEquals(1, commands.size());
+        assertEquals(0, commands.size(), "headless test process must fail closed before Maven starts");
         assertEquals("MAVEN", environment.verificationCapability("App.java").workspaceKind().name());
         assertEquals("maven", environment.verificationCapability("App.java").recommendedVerifier());
         assertTrue(result.trajectory().steps().stream().anyMatch(step ->
@@ -210,6 +215,11 @@ class PostEditVerificationAgentTest {
                         && "java-maven-project".equals(step.arguments().get("verifier"))));
         assertEquals(1, result.trajectory().steps().stream().filter(step ->
                 "run_maven_test".equals(step.toolName())).count());
+        assertEquals(ToolErrorCode.APPROVAL_UNAVAILABLE, result.trajectory().steps().stream()
+                .filter(step -> "run_maven_test".equals(step.toolName()))
+                .findFirst().orElseThrow().toolResult().errorCode());
+        assertFalse(result.finalAnswer().toLowerCase(java.util.Locale.ROOT).contains("tests passed"));
+        assertTrue(result.finalAnswer().contains("APPROVAL_UNAVAILABLE"));
     }
 
     @Test
@@ -263,6 +273,97 @@ class PostEditVerificationAgentTest {
         assertEquals("javac", environment.verificationCapability("Standalone.java").recommendedVerifier());
         assertTrue(script.observedMessages.stream().anyMatch(messages -> messages.contains("workspace_kind=STANDALONE")
                 && messages.contains("project verifier=javac") && messages.contains("Maven project not detected")));
+    }
+
+    @Test
+    void readOnlyCompilationRequestRunsJavacAndCanCompleteWithoutMutationWhenAlreadyValid() throws Exception {
+        Files.writeString(workspace.resolve("pom.xml"), "<project><modelVersion>4.0.0</modelVersion></project>");
+        Files.writeString(workspace.resolve("HelloWorld.java"),
+                "public class HelloWorld { public static void main(String[] args) { System.out.println(\"Hello World\"); } }\n");
+        ToolRegistry tools = ToolRegistry.withCliCodingTools(workspace, new DefaultProcessRunner(),
+                workspace.resolve(".m2/repository"));
+        LocalWorkspaceEnvironment environment = new LocalWorkspaceEnvironment(workspace, tools,
+                BuiltInCodeVerifiers.registry(new DefaultProcessRunner()));
+        Script script = new Script(
+                call("read_file", Map.of("path", "HelloWorld.java")),
+                finalAnswer("javac compiled HelloWorld.java successfully."));
+
+        AgentRunResult result = new Agent(script, environment, "test", 5, TaskMode.CODE_MODIFICATION,
+                true, false, AgentEventListener.NO_OP, false).runWithTrajectory(
+                "检查 HelloWorld.java 是否有编译错误");
+
+        assertTrue(result.trajectory().completed());
+        assertEquals("public class HelloWorld { public static void main(String[] args) { System.out.println(\"Hello World\"); } }\n",
+                Files.readString(workspace.resolve("HelloWorld.java")));
+        assertEquals(0, result.trajectory().steps().stream()
+                .filter(step -> step.toolName() != null && step.toolName().equals("apply_patch")).count());
+        assertTrue(result.trajectory().steps().stream().anyMatch(step ->
+                step.actionType() == AgentActionType.POST_EDIT_VERIFICATION
+                        && Boolean.TRUE.equals(step.arguments().get("requested"))
+                        && "PASS".equals(step.arguments().get("status"))
+                        && "java-javac".equals(step.arguments().get("verifier"))));
+    }
+
+    @Test
+    void failedRequestedCompilationFeedsJavacDiagnosticThenRepairsAndReverifies() throws Exception {
+        Files.writeString(workspace.resolve("pom.xml"), "<project><modelVersion>4.0.0</modelVersion></project>");
+        Files.writeString(workspace.resolve("HelloWorld.java"),
+                "public class HelloWorld { public static void main(String[] args) { system.out.println(\"Hello World\"); } }\n");
+        ToolRegistry tools = ToolRegistry.withCliCodingTools(workspace, new DefaultProcessRunner(),
+                workspace.resolve(".m2/repository"));
+        LocalWorkspaceEnvironment environment = new LocalWorkspaceEnvironment(workspace, tools,
+                BuiltInCodeVerifiers.registry(new DefaultProcessRunner()));
+        Script script = new Script(
+                call("read_file", Map.of("path", "HelloWorld.java")),
+                finalAnswer("There are no compilation errors."),
+                call("apply_patch", Map.of("path", "HelloWorld.java",
+                        "oldText", "system.out.println", "newText", "System.out.println")),
+                finalAnswer("javac compilation passed after repair."));
+
+        AgentRunResult result = new Agent(script, environment, "test", 8, TaskMode.CODE_MODIFICATION,
+                true, false, AgentEventListener.NO_OP, false).runWithTrajectory(
+                "检查 HelloWorld.java 是否有编译错误。如果存在，请自动修复并重新读取确认。");
+
+        assertTrue(result.trajectory().completed(), result.trajectory().terminationReason().name());
+        assertTrue(Files.readString(workspace.resolve("HelloWorld.java")).contains("System.out.println"));
+        List<AgentStep> requested = result.trajectory().steps().stream()
+                .filter(step -> step.actionType() == AgentActionType.POST_EDIT_VERIFICATION
+                        && Boolean.TRUE.equals(step.arguments().get("requested"))).toList();
+        assertEquals(List.of("FAIL", "PASS"), requested.stream()
+                .map(step -> step.arguments().get("status")).toList());
+        assertTrue(requested.get(0).errorMessage().contains("system.out.println"));
+        assertTrue(script.observedMessages.stream().anyMatch(messages ->
+                messages.contains("REQUESTED_COMPILATION_FAILED") && messages.contains("system")));
+    }
+
+    @Test
+    void unavailableRequestedCompilerCannotBeReportedAsPass() throws Exception {
+        Files.writeString(workspace.resolve("HelloWorld.java"), "class HelloWorld {}\n");
+        ToolRegistry tools = ToolRegistry.withCliCodingTools(workspace, new DefaultProcessRunner(),
+                workspace.resolve(".m2/repository"));
+        CodeVerifier unavailable = new CodeVerifier() {
+            @Override public String id() { return "java-javac"; }
+            @Override public boolean supports(Path file, Path root) { return file.toString().endsWith(".java"); }
+            @Override public VerificationResult verify(Path file, Path root, long sequence) {
+                return new VerificationResult(VerificationStatus.UNAVAILABLE, root.relativize(file), id(), "",
+                        "javac is unavailable", sequence);
+            }
+        };
+        LocalWorkspaceEnvironment environment = new LocalWorkspaceEnvironment(workspace, tools,
+                new VerifierRegistry(List.of(unavailable)));
+        Script script = new Script(call("read_file", Map.of("path", "HelloWorld.java")),
+                finalAnswer("Compilation passed; there are no errors."));
+
+        AgentRunResult result = new Agent(script, environment, "test", 4, TaskMode.CODE_MODIFICATION,
+                true, false, AgentEventListener.NO_OP, false).runWithTrajectory(
+                "检查 HelloWorld.java 是否有编译错误");
+
+        assertTrue(result.trajectory().completed());
+        assertTrue(result.finalAnswer().contains("could not verify compilation"));
+        assertTrue(result.finalAnswer().contains("not a compilation PASS"));
+        assertTrue(result.trajectory().steps().stream().anyMatch(step ->
+                step.actionType() == AgentActionType.POST_EDIT_VERIFICATION
+                        && "UNAVAILABLE".equals(step.arguments().get("status"))));
     }
 
     private static Agent agent(Path root, CodeVerifier verifier, Script script) {

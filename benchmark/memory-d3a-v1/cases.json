@@ -1,0 +1,278 @@
+[
+  {
+    "case_id": "F01",
+    "category": "fact",
+    "purpose": "Java version exact",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      },
+      {
+        "label": "maven",
+        "content": "构建采用 Maven"
+      },
+      {
+        "label": "junit",
+        "content": "单元测试使用 JUnit"
+      }
+    ],
+    "global_on": true,
+    "action": "none",
+    "user_question": "Java 版本",
+    "relevant_labels": [
+      "java"
+    ],
+    "expected_behavior": "Retrieve and inject relevant authorized current memory; no irrelevant entries",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "F02",
+    "category": "fact",
+    "purpose": "Build tool exact",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      },
+      {
+        "label": "maven",
+        "content": "构建采用 Maven"
+      },
+      {
+        "label": "junit",
+        "content": "单元测试使用 JUnit"
+      }
+    ],
+    "global_on": true,
+    "action": "none",
+    "user_question": "Maven",
+    "relevant_labels": [
+      "maven"
+    ],
+    "expected_behavior": "Retrieve and inject relevant authorized current memory; no irrelevant entries",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "F03",
+    "category": "fact",
+    "purpose": "Test tool exact",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      },
+      {
+        "label": "maven",
+        "content": "构建采用 Maven"
+      },
+      {
+        "label": "junit",
+        "content": "单元测试使用 JUnit"
+      }
+    ],
+    "global_on": true,
+    "action": "none",
+    "user_question": "JUnit",
+    "relevant_labels": [
+      "junit"
+    ],
+    "expected_behavior": "Retrieve and inject relevant authorized current memory; no irrelevant entries",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "P01",
+    "category": "paraphrase",
+    "purpose": "JDK paraphrase",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      },
+      {
+        "label": "maven",
+        "content": "构建采用 Maven"
+      },
+      {
+        "label": "junit",
+        "content": "单元测试使用 JUnit"
+      }
+    ],
+    "global_on": true,
+    "action": "none",
+    "user_question": "JDK 环境是什么",
+    "relevant_labels": [
+      "java"
+    ],
+    "expected_behavior": "Retrieve and inject relevant authorized current memory; no irrelevant entries",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "P02",
+    "category": "paraphrase",
+    "purpose": "Chinese build-tool paraphrase",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      },
+      {
+        "label": "maven",
+        "content": "构建采用 Maven"
+      },
+      {
+        "label": "junit",
+        "content": "单元测试使用 JUnit"
+      }
+    ],
+    "global_on": true,
+    "action": "none",
+    "user_question": "构建工具是什么",
+    "relevant_labels": [
+      "maven"
+    ],
+    "expected_behavior": "Retrieve and inject relevant authorized current memory; no irrelevant entries",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "P03",
+    "category": "paraphrase",
+    "purpose": "Verbose explicit technical topic",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      },
+      {
+        "label": "maven",
+        "content": "构建采用 Maven"
+      },
+      {
+        "label": "junit",
+        "content": "单元测试使用 JUnit"
+      }
+    ],
+    "global_on": true,
+    "action": "none",
+    "user_question": "为了准备课程报告，请详细说明这个项目选择的 Java 运行环境，并解释相关背景信息及开发约定",
+    "relevant_labels": [
+      "java"
+    ],
+    "expected_behavior": "Retrieve and inject relevant authorized current memory; no irrelevant entries",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "N01",
+    "category": "isolation",
+    "purpose": "Global OFF",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      }
+    ],
+    "global_on": false,
+    "action": "none",
+    "user_question": "Java 版本",
+    "relevant_labels": [],
+    "expected_behavior": "No shared injection",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "N02",
+    "category": "isolation",
+    "purpose": "Unrelated query",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      },
+      {
+        "label": "maven",
+        "content": "构建采用 Maven"
+      },
+      {
+        "label": "junit",
+        "content": "单元测试使用 JUnit"
+      }
+    ],
+    "global_on": true,
+    "action": "none",
+    "user_question": "如何种植兰花和浇水",
+    "relevant_labels": [],
+    "expected_behavior": "No shared injection",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "N03",
+    "category": "isolation",
+    "purpose": "Foreign workspace scope",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      }
+    ],
+    "global_on": true,
+    "action": "foreign",
+    "user_question": "Java 版本",
+    "relevant_labels": [],
+    "expected_behavior": "No shared injection",
+    "forbidden_text": null
+  },
+  {
+    "case_id": "V01",
+    "category": "version",
+    "purpose": "Update selects current version",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      }
+    ],
+    "global_on": true,
+    "action": "update",
+    "user_question": "Java 版本",
+    "relevant_labels": [
+      "java"
+    ],
+    "expected_behavior": "Retrieve and inject relevant authorized current memory; no irrelevant entries",
+    "forbidden_text": "Java 17"
+  },
+  {
+    "case_id": "V02",
+    "category": "version",
+    "purpose": "Deleted entry absent",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      }
+    ],
+    "global_on": true,
+    "action": "delete",
+    "user_question": "Java 版本",
+    "relevant_labels": [],
+    "expected_behavior": "No shared injection",
+    "forbidden_text": "Java 17"
+  },
+  {
+    "case_id": "V03",
+    "category": "version",
+    "purpose": "Stale replacement refused",
+    "initial_memories": [
+      {
+        "label": "java",
+        "content": "项目使用 Java 17"
+      }
+    ],
+    "global_on": true,
+    "action": "stale",
+    "user_question": "Java 版本",
+    "relevant_labels": [
+      "java"
+    ],
+    "expected_behavior": "Retrieve and inject relevant authorized current memory; no irrelevant entries",
+    "forbidden_text": "Java 17"
+  }
+]

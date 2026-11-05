@@ -1,7 +1,9 @@
 package com.agent.llm;
 
+import com.agent.diagnostics.LiveTestDiagnostics;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import okhttp3.Authenticator;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -18,22 +20,41 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-/** Non-streaming adapter for OpenAI-compatible /chat/completions endpoints. */
+/** Shared OpenAI-compatible /chat/completions transport adapter. */
 public final class OpenAiCompatibleClient implements LLMClient {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final String endpoint;
     private final String model;
     private final String apiKey;
+    private final boolean deepSeekNonThinking;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
 
+    static OpenAiCompatibleClient configuredForLiveTest(String endpoint, String model, String apiKey,
+                                                        Proxy proxy, LiveTestControl control) {
+        return configuredForLiveTest(endpoint, model, apiKey, proxy, control, false);
+    }
+
+    static OpenAiCompatibleClient configuredForLiveTest(String endpoint, String model, String apiKey,
+                                                        Proxy proxy, LiveTestControl control,
+                                                        boolean deepSeekNonThinking) {
+        return new OpenAiCompatibleClient(endpoint, model, apiKey,
+                liveTestHttpClient(proxy, control), new ObjectMapper(), deepSeekNonThinking);
+    }
+
     public OpenAiCompatibleClient(String endpoint, String model, String apiKey) {
-        this(endpoint, model, apiKey, defaultHttpClient(null), new ObjectMapper());
+        this(endpoint, model, apiKey, configuredHttpClient(null, false), new ObjectMapper());
     }
 
     OpenAiCompatibleClient(String endpoint, String model, String apiKey, Proxy proxy) {
-        this(endpoint, model, apiKey, defaultHttpClient(proxy), new ObjectMapper());
+        this(endpoint, model, apiKey, proxy, false);
+    }
+
+    OpenAiCompatibleClient(String endpoint, String model, String apiKey, Proxy proxy,
+                           boolean deepSeekNonThinking) {
+        this(endpoint, model, apiKey, configuredHttpClient(proxy, deepSeekNonThinking),
+                new ObjectMapper(), deepSeekNonThinking);
     }
 
     OpenAiCompatibleClient(
@@ -43,11 +64,23 @@ public final class OpenAiCompatibleClient implements LLMClient {
             OkHttpClient httpClient,
             ObjectMapper objectMapper
     ) {
+        this(endpoint, model, apiKey, httpClient, objectMapper, false);
+    }
+
+    OpenAiCompatibleClient(
+            String endpoint,
+            String model,
+            String apiKey,
+            OkHttpClient httpClient,
+            ObjectMapper objectMapper,
+            boolean deepSeekNonThinking
+    ) {
         this.endpoint = requireNonBlank(endpoint, "endpoint");
         this.model = requireNonBlank(model, "model");
         this.apiKey = apiKey == null || apiKey.isBlank() ? null : apiKey;
         this.httpClient = Objects.requireNonNull(httpClient, "httpClient must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.deepSeekNonThinking = deepSeekNonThinking;
     }
 
     @Override
@@ -57,34 +90,116 @@ public final class OpenAiCompatibleClient implements LLMClient {
 
     @Override
     public LLMResponse chat(List<Message> messages, List<ToolDefinition> tools) throws IOException {
-        Request request = buildRequest(messages, tools);
-        try (Response response = httpClient.newCall(request).execute()) {
+        Request request = buildRequest(messages, tools, false);
+        ModelRequestTelemetry.RequestHandle usageHandle = ModelRequestTelemetry.beginRequest(
+                deepSeekNonThinking ? "DEEPSEEK" : "OPENAI_COMPATIBLE", model, endpoint,
+                messages, tools, request.body() == null ? 0 : request.body().contentLength());
+        okhttp3.Call call = httpClient.newCall(request);
+        LiveTestControl control = LiveTestControl.processInstanceIfEnabled();
+        if (control != null) {
+            try {
+                control.configureCallTimeout(call);
+            } catch (IOException exception) {
+                ModelRequestTelemetry.fail(usageHandle, null);
+                LiveTestDiagnostics.recordProviderFailure(exception);
+                throw exception;
+            }
+        }
+        Integer responseStatus = null;
+        try (Response response = call.execute()) {
+            responseStatus = response.code();
             ResponseBody body = response.body();
             String responseJson = body == null ? "" : body.string();
             if (!response.isSuccessful()) {
+                ModelRequestTelemetry.fail(usageHandle, response.code());
                 String safeBody = apiKey == null ? responseJson : responseJson.replace(apiKey, "[REDACTED]");
                 throw new IOException("OpenAI-compatible request failed with HTTP "
-                        + response.code() + ": " + safeBody);
+                        + response.code() + (control == null ? ": " + safeBody : ""));
             }
             if (responseJson.isBlank()) {
                 throw new IOException("OpenAI-compatible endpoint returned an empty response body");
             }
-            return parseResponse(responseJson);
+            LLMResponse parsed = parseResponse(responseJson);
+            parsed = parsed.withRequestUsage(ModelRequestTelemetry.complete(
+                    usageHandle, response.code(), parsed.providerUsage()));
+            LiveTestDiagnostics.recordModelResponse(!parsed.toolCalls().isEmpty(), parsed.toolCalls());
+            return parsed;
+        } catch (IOException exception) {
+            ModelRequestTelemetry.fail(usageHandle, responseStatus);
+            LiveTestDiagnostics.recordProviderFailure(exception);
+            throw exception;
         }
     }
 
-    private Request buildRequest(List<Message> messages, List<ToolDefinition> tools) throws IOException {
+    /** Streaming transport used by the DeepSeek adapter; this client remains non-streaming for other providers. */
+    LLMResponse stream(List<Message> messages, List<ToolDefinition> tools, LlmStreamListener listener)
+            throws IOException {
+        Objects.requireNonNull(listener, "listener must not be null");
+        Request request = buildRequest(messages, tools, true);
+        ModelRequestTelemetry.RequestHandle usageHandle = ModelRequestTelemetry.beginRequest(
+                deepSeekNonThinking ? "DEEPSEEK" : "OPENAI_COMPATIBLE", model, endpoint,
+                messages, tools, request.body() == null ? 0 : request.body().contentLength());
+        okhttp3.Call call = httpClient.newCall(request);
+        LiveTestControl control = LiveTestControl.processInstanceIfEnabled();
+        if (control != null) {
+            try {
+                control.configureCallTimeout(call);
+            } catch (IOException exception) {
+                ModelRequestTelemetry.fail(usageHandle, null);
+                LiveTestDiagnostics.recordProviderFailure(exception);
+                throw exception;
+            }
+        }
+        Integer responseStatus = null;
+        try (Response response = call.execute()) {
+            responseStatus = response.code();
+            ResponseBody body = response.body();
+            if (!response.isSuccessful()) {
+                ModelRequestTelemetry.fail(usageHandle, response.code());
+                String responseText = body == null ? "" : body.string();
+                String safeBody = apiKey == null ? responseText : responseText.replace(apiKey, "[REDACTED]");
+                throw new IOException("OpenAI-compatible streaming request failed with HTTP "
+                        + response.code() + (control == null ? ": " + safeBody : ""));
+            }
+            if (body == null) {
+                throw new IOException("OpenAI-compatible endpoint returned an empty streaming response body");
+            }
+            StreamingResponseAccumulator accumulator = new StreamingResponseAccumulator(
+                    objectMapper, listener, deepSeekNonThinking ? "DeepSeek" : "OpenAI-compatible", apiKey);
+            LLMResponse parsed = SseResponseReader.read(body, accumulator,
+                    deepSeekNonThinking ? "DeepSeek" : "OpenAI-compatible");
+            parsed = parsed.withRequestUsage(ModelRequestTelemetry.complete(
+                    usageHandle, response.code(), parsed.providerUsage()));
+            LiveTestDiagnostics.recordModelResponse(!parsed.toolCalls().isEmpty(), parsed.toolCalls());
+            return parsed;
+        } catch (IOException exception) {
+            ModelRequestTelemetry.fail(usageHandle, responseStatus);
+            LiveTestDiagnostics.recordProviderFailure(exception);
+            throw exception;
+        }
+    }
+
+    Request buildRequest(List<Message> messages, List<ToolDefinition> tools) throws IOException {
+        return buildRequest(messages, tools, false);
+    }
+
+    Request buildRequest(List<Message> messages, List<ToolDefinition> tools, boolean streaming) throws IOException {
         Objects.requireNonNull(messages, "messages must not be null");
         Objects.requireNonNull(tools, "tools must not be null");
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("model", model);
         payload.put("messages", List.copyOf(messages));
+        if (deepSeekNonThinking) {
+            payload.put("thinking", Map.of("type", "disabled"));
+        }
+        if (streaming) payload.put("stream", true);
         if (!tools.isEmpty()) payload.put("tools", tools.stream().map(OpenAiCompatibleClient::serializeTool).toList());
 
         Request.Builder builder = new Request.Builder()
                 .url(endpoint)
                 .post(RequestBody.create(objectMapper.writeValueAsString(payload), JSON));
         if (apiKey != null) builder.header("Authorization", "Bearer " + apiKey);
+        if (streaming) builder.header("Accept", "text/event-stream");
         return builder.build();
     }
 
@@ -114,7 +229,7 @@ public final class OpenAiCompatibleClient implements LLMClient {
                 ));
             }
         }
-        return new LLMResponse(content, calls);
+        return new LLMResponse(content, calls, ProviderTokenUsage.fromJson(root.path("usage")));
     }
 
     private static Map<String, Object> serializeTool(ToolDefinition tool) {
@@ -134,6 +249,37 @@ public final class OpenAiCompatibleClient implements LLMClient {
                 .readTimeout(120, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS);
         if (proxy != null) builder.proxy(proxy);
+        return builder.build();
+    }
+
+    private static OkHttpClient configuredHttpClient(Proxy proxy, boolean deepSeek) {
+        LiveTestControl control = LiveTestControl.processInstanceIfEnabled();
+        if (control != null) return liveTestHttpClient(proxy, control);
+        OkHttpClient.Builder builder = defaultHttpClient(proxy).newBuilder();
+        if (deepSeek) {
+            builder.retryOnConnectionFailure(false)
+                    .followRedirects(false)
+                    .followSslRedirects(false)
+                    .authenticator(Authenticator.NONE)
+                    .proxyAuthenticator(Authenticator.NONE);
+        }
+        return builder.build();
+    }
+
+    private static OkHttpClient liveTestHttpClient(Proxy proxy, LiveTestControl control) {
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                .retryOnConnectionFailure(false)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .authenticator(Authenticator.NONE)
+                .proxyAuthenticator(Authenticator.NONE)
+                .callTimeout(5, TimeUnit.MINUTES)
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(120, TimeUnit.SECONDS)
+                .writeTimeout(30, TimeUnit.SECONDS);
+        if (proxy != null) builder.proxy(proxy);
+        builder.addInterceptor(LiveTestControl.requestAttemptInterceptor(control));
+        builder.addNetworkInterceptor(LiveTestControl.networkExchangeInterceptor(control));
         return builder.build();
     }
 

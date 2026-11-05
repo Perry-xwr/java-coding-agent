@@ -14,6 +14,8 @@ import java.util.HashMap;
 import java.util.List;
 
 public final class AgentProgress {
+    public static final int MAX_REPAIR_MUTATIONS_PER_TASK = 2;
+    public static final int MAX_MAVEN_ATTEMPTS_PER_TASK = 3;
     private boolean workspaceMutationSucceeded;
     private boolean runTest;
     private Boolean lastTestPassed;
@@ -52,6 +54,15 @@ public final class AgentProgress {
     private final Map<String, String> lastMutationTools = new HashMap<>();
     private final Map<String, Integer> lastSuccessfulReadSteps = new HashMap<>();
     private final Map<String, String> lastSuccessfulReadIdentities = new HashMap<>();
+    private CompilationVerificationRequest compilationVerificationRequest;
+    private VerificationResult compilationVerificationResult;
+    private boolean readRequiredAfterMavenFailure;
+    private String mavenFailureReadTarget;
+    private long lastMavenFailureMutationSequence = -1;
+    private int mavenInvocationCount;
+    private int repairMutationsForTask;
+    private RepairFailureCategory currentMavenFailureCategory = RepairFailureCategory.UNKNOWN;
+    private RepairFailureCategory nonRepairableFailureCategory = RepairFailureCategory.UNKNOWN;
 
     public void observe(
             String toolName,
@@ -79,8 +90,18 @@ public final class AgentProgress {
                         > verificationFailures.get(key).failureStep()) {
                     repairMutationCounts.merge(key, 1, Integer::sum);
                     totalRepairMutationCounts.merge(key, 1, Integer::sum);
+                    repairMutationsForTask++;
+                } else if (currentMavenFailureCategory.sourceRepairCandidate()
+                        && !readRequiredAfterMavenFailure
+                        && stepIndex > lastTestFailureStep) {
+                    totalRepairMutationCounts.merge(key, 1, Integer::sum);
+                    repairMutationsForTask++;
                 }
                 verificationResults.remove(key);
+                if (compilationVerificationRequest != null
+                        && compilationVerificationRequest.targets(lastModifiedFile)) {
+                    compilationVerificationResult = null;
+                }
             }
             verificationRequired = true;
             postMutationReadSeen = false;
@@ -119,10 +140,18 @@ public final class AgentProgress {
                     consecutiveEditFailures = 0;
                     consecutiveEditFailurePath = null;
                 }
+                if (readRequiredAfterMavenFailure && stepIndex > lastTestFailureStep
+                        && (mavenFailureReadTarget == null
+                        || pathKey(mavenFailureReadTarget).equals(key))) {
+                    readRequiredAfterMavenFailure = false;
+                    rereadModifiedFileAfterFailure = true;
+                    rereadAfterFailureCount++;
+                }
             }
         }
         if ("run_maven_test".equals(toolName)
-                && result.errorCode() != ToolErrorCode.TOOL_UNAVAILABLE_IN_ENVIRONMENT) {
+                && result.errorCode() != ToolErrorCode.MAVEN_RETRY_BLOCKED) {
+            mavenInvocationCount++;
             runTest = true;
             lastTestPassed = result.success();
             if (verificationRequired && stepIndex > lastPatchStep) {
@@ -130,9 +159,21 @@ public final class AgentProgress {
                 postMutationTestPassed = result.success();
                 postMutationTestErrorCode = result.errorCode();
             }
-            if (!result.success() && result.errorCode() == ToolErrorCode.TEST_FAILED) {
+            if (result.success()) {
+                currentMavenFailureCategory = RepairFailureCategory.UNKNOWN;
+                nonRepairableFailureCategory = RepairFailureCategory.UNKNOWN;
+                readRequiredAfterMavenFailure = false;
+            } else {
+                RepairFailureCategory category = RepairFailureCategory.fromToolResult(result);
+                if (category != RepairFailureCategory.UNKNOWN) currentMavenFailureCategory = category;
+                if (!category.sourceRepairCandidate()) nonRepairableFailureCategory = category;
+            }
+            if (!result.success() && currentMavenFailureCategory.sourceRepairCandidate()) {
                 lastTestFailureStep = stepIndex;
+                lastMavenFailureMutationSequence = mutationSequence;
                 rereadModifiedFileAfterFailure = false;
+                readRequiredAfterMavenFailure = true;
+                mavenFailureReadTarget = lastModifiedFile;
                 contextActionsAfterFailure = 0;
                 latestDiagnosticType = text(result.metadata().get("diagnosticType"));
                 latestDiagnosticSummary = text(result.metadata().get("diagnosticSummary"));
@@ -169,6 +210,39 @@ public final class AgentProgress {
 
     public boolean verificationRequired() {
         return verificationRequired;
+    }
+
+    public void requireCompilationVerification(CompilationVerificationRequest request) {
+        compilationVerificationRequest = request;
+        compilationVerificationResult = null;
+    }
+
+    public boolean compilationVerificationRequested() {
+        return compilationVerificationRequest != null;
+    }
+
+    public boolean compilationVerificationTargets(String path) {
+        return compilationVerificationRequest != null && compilationVerificationRequest.targets(path);
+    }
+
+    public boolean compilationVerificationRepairOnFailure() {
+        return compilationVerificationRequest != null && compilationVerificationRequest.repairOnFailure();
+    }
+
+    public VerificationResult compilationVerificationResult() {
+        return compilationVerificationResult;
+    }
+
+    public void observeCompilationVerification(VerificationResult result) {
+        if (compilationVerificationRequest == null || result == null
+                || !compilationVerificationRequest.targets(result.file().toString())) {
+            return;
+        }
+        if (compilationVerificationRequest.targetPath() == null) {
+            compilationVerificationRequest = new CompilationVerificationRequest(
+                    result.file().toString(), compilationVerificationRequest.repairOnFailure());
+        }
+        compilationVerificationResult = result;
     }
 
     public boolean postMutationReadSeen() {
@@ -313,7 +387,48 @@ public final class AgentProgress {
     public boolean requiresRepairRead(String path) {
         if (path == null) return false;
         VerificationFailureContext failure = verificationFailures.get(pathKey(path));
-        return failure != null && lastSuccessfulReadSteps.getOrDefault(pathKey(path), 0) <= failure.failureStep();
+        boolean verifierFailureNeedsRead = failure != null
+                && lastSuccessfulReadSteps.getOrDefault(pathKey(path), 0) <= failure.failureStep();
+        boolean mavenFailureNeedsRead = readRequiredAfterMavenFailure
+                && (mavenFailureReadTarget == null
+                || pathKey(mavenFailureReadTarget).equals(pathKey(path)));
+        return verifierFailureNeedsRead || mavenFailureNeedsRead;
+    }
+
+    public boolean readRequiredAfterMavenFailure() { return readRequiredAfterMavenFailure; }
+
+    public RepairFailureCategory currentMavenFailureCategory() { return currentMavenFailureCategory; }
+
+    public RepairFailureCategory nonRepairableFailureCategory() { return nonRepairableFailureCategory; }
+
+    public int repairMutationsForTask() { return repairMutationsForTask; }
+
+    public String mavenRetryBlockReason() {
+        if (nonRepairableFailureCategory != RepairFailureCategory.UNKNOWN) {
+            return "MAVEN_FAILURE_NOT_SOURCE_REPAIRABLE:" + nonRepairableFailureCategory;
+        }
+        if (mavenInvocationCount >= MAX_MAVEN_ATTEMPTS_PER_TASK) return "MAVEN_ATTEMPT_LIMIT_REACHED";
+        if (currentMavenFailureCategory.sourceRepairCandidate()
+                && lastMavenFailureMutationSequence == mutationSequence) {
+            return "MAVEN_RETRY_WITHOUT_SOURCE_CHANGE:" + currentMavenFailureCategory;
+        }
+        return null;
+    }
+
+    public String mutationBlockReason(String path) {
+        if (nonRepairableFailureCategory == RepairFailureCategory.APPROVAL_DENIED
+                || nonRepairableFailureCategory == RepairFailureCategory.APPROVAL_UNAVAILABLE) {
+            return "REPAIR_BLOCKED_BY_NON_SOURCE_FAILURE:" + nonRepairableFailureCategory;
+        }
+        if ((currentMavenFailureCategory.sourceRepairCandidate()
+                || verificationFailures.containsKey(path == null ? "" : pathKey(path)))
+                && repairMutationsForTask >= MAX_REPAIR_MUTATIONS_PER_TASK) {
+            return "REPAIR_ATTEMPT_LIMIT_REACHED";
+        }
+        if (readRequiredAfterMavenFailure) {
+            return "REPAIR_REQUIRES_FRESH_READ_AFTER_TEST_FAILURE";
+        }
+        return null;
     }
 
     public VerificationFailureContext verificationFailure(String path) {
@@ -449,7 +564,7 @@ public final class AgentProgress {
             case "list_files", "find_files", "read_file", "search_code" ->
                     containsAny(focus, "read", "inspect", "review", "locate", "find", "search", "check", "confirm",
                             "查看", "读取", "阅读", "搜索", "查找", "定位", "检查", "确认", "分析");
-            case "apply_patch", "replace_lines", "insert_before", "insert_after", "create_file" ->
+            case "apply_patch", "apply_context_patch", "replace_lines", "insert_before", "insert_after", "create_file" ->
                     containsAny(focus, "edit", "modify", "change", "fix", "repair", "update", "implement",
                             "add", "create", "write", "replace", "patch", "编辑", "修改", "修复", "创建",
                             "新建", "新增", "添加", "实现", "写入", "替换", "更新");
@@ -565,6 +680,7 @@ public final class AgentProgress {
 
     private static boolean isEditTool(String toolName) {
         return "apply_patch".equals(toolName)
+                || "apply_context_patch".equals(toolName)
                 || "replace_lines".equals(toolName)
                 || "insert_before".equals(toolName)
                 || "insert_after".equals(toolName);
@@ -572,6 +688,7 @@ public final class AgentProgress {
 
     private static boolean isWorkspaceMutationTool(String toolName) {
         return "apply_patch".equals(toolName)
+                || "apply_context_patch".equals(toolName)
                 || "replace_lines".equals(toolName)
                 || "insert_before".equals(toolName)
                 || "insert_after".equals(toolName)

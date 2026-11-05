@@ -38,6 +38,20 @@ class CliWorkingContextTest {
     }
 
     @Test
+    void listFilesAcceptsPagedObjectShapeAndLegacyArrayShape() {
+        CliWorkingContext paged = new CliWorkingContext();
+        paged.observeToolResult("list_files", Map.of("path", "."), ToolResult.success(
+                "{\"files\":[{\"path\":\"src/A.java\"},{\"path\":\"README.md\"}],"
+                        + "\"truncated\":true,\"nextOffset\":2}"));
+        CliWorkingContext legacy = new CliWorkingContext();
+        legacy.observeToolResult("list_files", Map.of("path", "."),
+                ToolResult.success("[\"src/A.java\",\"README.md\"]"));
+
+        assertEquals(List.of("src/A.java", "README.md"), paged.lastResolvedFiles());
+        assertEquals(paged.lastResolvedFiles(), legacy.lastResolvedFiles());
+    }
+
+    @Test
     void successfulReadRecordsOnlyVerifiedFileFacts() {
         CliWorkingContext memory = new CliWorkingContext();
 

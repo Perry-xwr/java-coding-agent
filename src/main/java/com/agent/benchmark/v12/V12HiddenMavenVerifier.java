@@ -18,12 +18,25 @@ import java.util.stream.Stream;
 public final class V12HiddenMavenVerifier {
     public record Result(boolean available, boolean passed, String diagnosticSummary) {}
 
+    @FunctionalInterface
+    interface MavenExecutor {
+        ToolResult execute(Path workspace, Path localRepository);
+    }
+
     private final Path hiddenRoot;
     private final Path localRepository;
+    private final MavenExecutor mavenExecutor;
 
     public V12HiddenMavenVerifier(Path hiddenRoot, Path localRepository) {
+        this(hiddenRoot, localRepository,
+                (workspace, repository) -> new RunMavenTestTool(workspace, new DefaultProcessRunner(), repository)
+                        .execute("{}"));
+    }
+
+    V12HiddenMavenVerifier(Path hiddenRoot, Path localRepository, MavenExecutor mavenExecutor) {
         this.hiddenRoot=hiddenRoot.toAbsolutePath().normalize();
         this.localRepository=localRepository.toAbsolutePath().normalize();
+        this.mavenExecutor=java.util.Objects.requireNonNull(mavenExecutor);
     }
 
     public Result verify(String taskId,Path workspace) throws IOException {
@@ -42,7 +55,7 @@ public final class V12HiddenMavenVerifier {
             }
         }
         try {
-            ToolResult result=new RunMavenTestTool(workspace,new DefaultProcessRunner(),localRepository).execute("{}");
+            ToolResult result=mavenExecutor.execute(workspace,localRepository);
             String diagnostic=result.success()?"BUILD SUCCESS":result.errorCode()+": "+safe(result.errorMessage());
             return new Result(true,result.success(),diagnostic);
         } finally {

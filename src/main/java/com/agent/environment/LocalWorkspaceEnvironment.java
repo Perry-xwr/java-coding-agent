@@ -17,12 +17,16 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.util.List;
 import java.util.Objects;
+import com.agent.agent.TaskChangeReview;
+import com.agent.agent.TaskDiffCollector;
+import com.agent.llm.ToolCall;
 
 /** Local filesystem-backed environment bound to one workspace and tool registry. */
 public final class LocalWorkspaceEnvironment implements AgentEnvironment {
     private final Path workspaceRoot;
     private final ToolRegistry toolRegistry;
     private final PostEditVerificationService verificationService;
+    private TaskDiffCollector changeCollector;
 
     public LocalWorkspaceEnvironment(Path workspaceRoot, ToolRegistry toolRegistry) {
         this(workspaceRoot, toolRegistry, BuiltInCodeVerifiers.registry(new DefaultProcessRunner()));
@@ -41,6 +45,7 @@ public final class LocalWorkspaceEnvironment implements AgentEnvironment {
         });
     }
 
+    @Override
     public Path workspaceRoot() {
         return workspaceRoot;
     }
@@ -52,7 +57,25 @@ public final class LocalWorkspaceEnvironment implements AgentEnvironment {
         if (!availability.available()) {
             return availability.rejectionResult();
         }
-        return toolRegistry.execute(toolCall.name(), toolCall.arguments());
+        TaskDiffCollector collector;
+        synchronized (this) { collector = changeCollector; }
+        TaskDiffCollector.Snapshot before = collector == null
+                ? null : collector.before(toolCall);
+        ToolResult result = toolRegistry.execute(toolCall.name(), toolCall.arguments());
+        if (collector != null && before != null) collector.after(before, toolCall, result);
+        return result;
+    }
+
+    @Override
+    public synchronized void beginTask(String runId) {
+        changeCollector = new TaskDiffCollector(workspaceRoot);
+    }
+
+    @Override
+    public synchronized TaskChangeReview finishTask(String runId, java.util.Map<String, String> verificationByPath) {
+        TaskDiffCollector collector = changeCollector;
+        changeCollector = null;
+        return collector == null ? TaskChangeReview.empty(runId) : collector.finish(runId, verificationByPath);
     }
 
     @Override

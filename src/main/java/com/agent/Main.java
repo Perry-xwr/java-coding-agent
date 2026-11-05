@@ -1,18 +1,15 @@
 package com.agent;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Path;
 
 public class Main {
     public static void main(String[] args) throws IOException {
         Path workspace = Path.of(".").toAbsolutePath().normalize();
-        ConsoleUi ui = new ConsoleUi(System.out);
+        var config=com.agent.llm.ModelProviderConfig.fromEnvironment();
+        ConsoleUi ui = new ConsoleUi(System.out,config.displayProvider(),config.model());
         CliSessions sessions = CliAgentFactory.createProfiles(workspace, ui);
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
-            new InteractiveCli(sessions, ui, workspace).run(reader);
-        }
+        new InteractiveCli(sessions, ui, workspace).runInteractive();
     }
 }

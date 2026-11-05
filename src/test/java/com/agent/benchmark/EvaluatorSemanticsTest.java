@@ -5,6 +5,7 @@ import com.agent.agent.AgentTrajectory;
 import com.agent.agent.TerminationReason;
 import com.agent.tool.execution.ProcessExecutionResult;
 import com.agent.tool.execution.ProcessRunner;
+import com.agent.tool.TestingToolRegistries;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -111,7 +112,9 @@ class EvaluatorSemanticsTest {
                 runner,
                 Map.of("multi_001", new EvaluationSpec(
                         "multi_001", List.of("Math.min", "Math.max", "<= end"), List.of(), strict
-                ))
+                )),
+                (workspace, arguments) -> TestingToolRegistries.runMavenTest(workspace, runner,
+                        root(".m2", "repository"), arguments)
         );
     }
 
@@ -139,12 +142,14 @@ class EvaluatorSemanticsTest {
 
     private static ProcessRunner passingRunner() {
         return (command, directory, timeout, maxOutput) ->
-                new ProcessExecutionResult(0, false, "BUILD SUCCESS", false, 1);
+                new ProcessExecutionResult(0, false,
+                        "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\nBUILD SUCCESS", false, 1);
     }
 
     private static ProcessRunner failingRunner() {
         return (command, directory, timeout, maxOutput) ->
-                new ProcessExecutionResult(1, false, "[ERROR] Tests failed", false, 1);
+                new ProcessExecutionResult(1, false,
+                        "Tests run: 1, Failures: 1, Errors: 0, Skipped: 0\n[ERROR] Tests failed", false, 1);
     }
 
     private static Path root(String first, String... more) {

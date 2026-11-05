@@ -29,6 +29,8 @@ class GlmStreamingClientTest {
                 + event("{\"choices\":[{\"delta\":{\"content\":\"lo 世界\\n\"}}]}")
                 + event("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"function\":{\"name\":\"read_\",\"arguments\":\"{\\\"pa\"}}]}}]}")
                 + event("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"name\":\"file\",\"arguments\":\"th\\\":\\\"README.md\\\"}\"}}]}}]}")
+                + event("{\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}],"
+                + "\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":3,\"total_tokens\":8}}")
                 + "data: [DONE]\n\n";
         AtomicReference<String> requestJson = new AtomicReference<>();
         GlmClient client = client(events, requestJson);
@@ -45,6 +47,8 @@ class GlmStreamingClientTest {
         assertEquals(List.of(new ToolCall("call-1", "read_file", "{\"path\":\"README.md\"}")),
                 response.toolCalls());
         assertTrue(requestJson.get().contains("\"stream\":true"));
+        assertEquals(5, response.providerUsage().inputTokens());
+        assertEquals(8, response.providerUsage().totalTokens());
     }
 
     @Test
@@ -69,6 +73,19 @@ class GlmStreamingClientTest {
         ));
 
         assertTrue(error.getMessage().contains("Incomplete tool call"));
+    }
+
+    @Test
+    void streamWithoutDoneMarkerDoesNotReturnUsageAsSuccessfulResponse() {
+        String events = event("{\"choices\":[{\"delta\":{\"content\":\"partial\"}}],"
+                + "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}")
+                + event("{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}");
+        GlmClient client = client(events, new AtomicReference<>());
+
+        IOException error = assertThrows(IOException.class, () -> client.stream(
+                List.of(Message.user("hello")), List.of(), LlmStreamListener.NO_OP));
+
+        assertTrue(error.getMessage().contains("ended before data: [DONE]"));
     }
 
     private static GlmClient client(String responseText, AtomicReference<String> requestJson) {
