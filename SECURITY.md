@@ -1,49 +1,31 @@
 # Security Policy
 
-## Workspace policy
+## Scope
 
-- File tools are confined to their configured workspace root.
-- Tool paths must be workspace-relative; absolute paths are rejected, including absolute paths that point inside the workspace.
-- Normalized paths that leave the workspace through `..` traversal are rejected.
-- Existing targets are resolved with `Path.toRealPath()`. A symbolic link, junction, or other Java NIO-detectable redirection whose final target is outside the real workspace root is rejected.
-- If an existing path cannot be resolved reliably, access fails closed rather than bypassing validation.
+This project is an educational coding-agent prototype, not a hardened sandbox. The application and its child processes run as the current operating-system user. Do not use it on an untrusted workspace or with permissions broader than required.
 
-This policy applies to `list_files`, `read_file`, `search_code`, `apply_patch`, and the experimental `replace_lines` tool. Future file-creation operations require a separate creation-path policy and are not covered by the current resolver.
+## Workspace file tools
 
-## Write policy
+- File tools receive a configured workspace root and expect workspace-relative paths. Absolute paths and paths escaping the root are rejected.
+- Existing and new targets are resolved with normalized and real-path checks. Detected symbolic-link or reparse-point redirections outside the workspace are rejected.
+- The registered coding tools include file listing, search and read, `create_file` for a new UTF-8 file without overwrite, and targeted text-edit operations such as `apply_patch` (additional edit strategies depend on the runtime registry). There is no general-purpose file delete tool.
+- Text edits require matching current file content; stale or ambiguous patch context fails instead of silently overwriting unrelated content.
+- Session, memory, and diagnostic persistence is application-managed data under the workspace's `.agent-cli/` directory. Treat it as private user data and do not publish it.
 
-- `apply_patch` is the V1 write-capable tool. The experimental `replace_lines` tool is available only in its explicit strategy registry; there is no arbitrary `write_file` tool.
-- Only existing regular UTF-8 files inside the configured workspace may be patched.
-- Patch paths must be workspace-relative and pass the same normalized and real-path checks as read tools.
-- A patch is accepted only when `oldText` has exactly one match. Missing or ambiguous matches leave the original file unchanged.
-- A line replacement additionally requires a valid line range and exact `expectedText` from the current file. Stale context leaves the file unchanged.
-- Updated content is written to a temporary file in the target directory and moved over the original with atomic replacement when the filesystem supports it. A same-filesystem safe replacement is used as fallback.
-- The runtime cannot create arbitrary target files, delete files, or rename/move files.
-- Symbolic-link or reparse-point targets outside the workspace are rejected before writing.
+## Process execution and approval
 
-## Process policy
+- The application does not expose an arbitrary shell-command tool to the model.
+- `run_maven_test` constructs a fixed Maven `test` goal. Optional selectors are validated; the model cannot supply an arbitrary goal or working directory.
+- In the Daily workflow, Maven execution requires the existing explicit approval flow. Denied, unavailable, timed-out, or failed execution must not be represented as a successful test.
+- Process execution is bounded by configured time and captured-output limits. These controls reduce risk but do not replace OS isolation.
 
-- There is no generic shell or arbitrary-command tool.
-- `run_maven_test` constructs a fixed `ProcessBuilder` argument list; it never accepts a command or Maven goal from the model.
-- The only allowed Maven goal is `test`, optionally restricted to a validated Java test class and method.
-- The process working directory is fixed to the configured workspace root and cannot be supplied by the model.
-- Test selectors accept only Java identifier/package characters; shell and control characters are rejected.
-- Maven execution has a 120-second timeout. Timed-out processes and descendants are forcibly terminated.
-- Combined stdout/stderr capture is limited to 100 KiB and reports whether truncation occurred.
-- Test failures are recoverable typed observations, not fatal Agent termination.
-- The Maven local repository path is host-configured and is not model-controlled.
+## Model credentials and network
 
-## Test policy
+- The Daily launcher reads `DEEPSEEK_API_KEY` from the process environment and fails if it is absent; it does not automatically load `.env`.
+- Other provider entry points use the environment-backed `MODEL_PROVIDER`, `MODEL_BASE_URL`, `MODEL_NAME`, and provider-specific key variables (`GLM_API_KEY`, `DEEPSEEK_API_KEY`, or `MODEL_API_KEY` for the OpenAI-compatible provider).
+- Keep real credentials in a trusted local secret store or environment variables. Never commit `.env`, print credentials, or include them in logs, screenshots, session exports, or public test fixtures.
+- Model requests are sent to the configured provider and may incur charges. Default automated tests use fakes or mock HTTP; live-provider tests are separate and opt-in.
 
-- `mvn test` runs the deterministic offline suite and does not call the GLM provider, even when `GLM_API_KEY` is present.
-- A live GLM smoke test runs only when explicitly enabled with `mvn test -Pglm-integration` and `GLM_API_KEY` is available.
-- If the integration profile is enabled without `GLM_API_KEY`, the live test is skipped.
-- The real Phase 3 Maven fixture test is opt-in through the `phase3.integration` system property; ordinary tests use an injected deterministic process runner.
-- API keys must remain in environment variables and must not be printed or committed.
+## Reporting
 
-## Credential policy
-
-- `GLM_API_KEY` is read from the process environment; it is never hard-coded in the repository.
-- `.env` is ignored by Git and must not be committed.
-- Trajectories, evaluations, reports, and debug output must not contain API keys, Authorization headers, or bearer tokens.
-- `GLM_DEBUG` controls HTTP status logging only and must not expose request credentials.
+For a suspected vulnerability, do not include credentials, private session data, or memory contents in a public issue. Use GitHub's private vulnerability reporting for this repository when available; otherwise contact the repository owner privately with a concise reproduction and affected version.

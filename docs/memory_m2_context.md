@@ -153,7 +153,7 @@ Approved host project code remains outside an OS sandbox, as already documented 
 Targeted command:
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=SessionContextMemoryTest,ManagedConversationTest,CliSessionStoreTest,InteractiveCliSessionTest,RequestContextSelectorTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=SessionContextMemoryTest,ManagedConversationTest,CliSessionStoreTest,InteractiveCliSessionTest,RequestContextSelectorTest' test
 ```
 
 Final result: **52 tests, 0 failures, 0 errors, 0 skipped**. This includes 18 M2
@@ -167,7 +167,7 @@ temporary file patch/stale-snapshot rejection.
 Broader regression command:
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
 ```
 
 Final result: **656 tests, 0 failures, 0 errors, 14 skipped, BUILD SUCCESS**.

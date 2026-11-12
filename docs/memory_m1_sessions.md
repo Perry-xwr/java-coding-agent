@@ -83,7 +83,7 @@ to preserve the existing experiment persistence and process-wide budgets.
 Targeted command:
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=ManagedConversationTest,SessionDataPrivacyTest,CliSessionStoreTest,InteractiveCliSessionTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=ManagedConversationTest,SessionDataPrivacyTest,CliSessionStoreTest,InteractiveCliSessionTest' test
 ```
 
 The targeted run passed 28 tests, zero failures/errors/skips. A later symlink-alias
@@ -93,7 +93,7 @@ so that case was reported as skipped rather than verified.
 Broader offline regression:
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
 ```
 
 Result: **638 tests, 0 failures, 0 errors, 14 skipped, BUILD SUCCESS**.
