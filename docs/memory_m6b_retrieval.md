@@ -110,8 +110,8 @@ Calculator experiment records and existing shared JSON format are unchanged.
 ## Recorded validation — 2026-11-01
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=SemanticMemoryTest,AutoMemoryFlowTest,MemoryManagementTest,CrossSessionMemoryTest' test
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=SemanticMemoryTest,AutoMemoryFlowTest,MemoryManagementTest,CrossSessionMemoryTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
 ```
 
 Final targeted: 40 tests, zero failures/errors/skips. New semantic tests: eight,

@@ -122,8 +122,8 @@ quality, cross-workspace sharing and concurrent-writer transactions are not impl
 ## Recorded validation (2026-10-25)
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=CrossSessionMemoryTest,SessionContextMemoryTest,ManagedConversationTest,CliSessionStoreTest,SessionDataPrivacyTest' test
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=CrossSessionMemoryTest,SessionContextMemoryTest,ManagedConversationTest,CliSessionStoreTest,SessionDataPrivacyTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
 ```
 
 Targeted: 54 total, 53 passed, 0 failures, 0 errors, 1 skipped. M3's 15 new

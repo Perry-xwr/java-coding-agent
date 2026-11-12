@@ -7,7 +7,7 @@
 包含目的、初始记忆/会话开关/动作、用户问题、相关标签和预期行为。
 原始结果逐例记录召回内容、注入标签、上下文门控、权限/版本、通过状态和失败原因。
 
-原始实验目录：`D:\Development\agent-cli\benchmark-runs\memory-d3a-20261101-d3e85bfb`。
+原始实验目录：`.\benchmark-runs\memory-d3a-20261101-d3e85bfb`。
 其中 baseline.json 在修改前创建，after.json 是修改后的同案例结果；另保存改前源码、
 frozen-hashes.json 及互相隔离的两阶段 Memory 工作区。基线未覆盖，测试集哈希一致。
 
@@ -84,10 +84,10 @@ GraphBuilderExtra：完整词匹配，前缀不匹配，无关中文查询为空
 
 ```powershell
 # 历史顺序记录：baseline 在生产改动前执行，不能用当前改后源码重跑后冒充旧基线。
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=MemoryD3EvaluationTest' '-Dagent.d3.output=D:\Development\agent-cli\benchmark-runs\memory-d3a-20261101-d3e85bfb' '-Dagent.d3.phase=baseline' test
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=MemoryD3EvaluationTest,DiscoveryOutputPaginationTest,CrossSessionMemoryTest,SemanticMemoryTest' '-Dagent.d3.output=D:\Development\agent-cli\benchmark-runs\memory-d3a-20261101-d3e85bfb' '-Dagent.d3.phase=after' test
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=TechnicalAnchorRetrievalTest,CrossSessionMemoryTest,SemanticMemoryTest,AutoMemoryFlowTest,MemoryConflictTest' test
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=MemoryD3EvaluationTest' '-Dagent.d3.output=.\benchmark-runs\memory-d3a-20261101-d3e85bfb' '-Dagent.d3.phase=baseline' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=MemoryD3EvaluationTest,DiscoveryOutputPaginationTest,CrossSessionMemoryTest,SemanticMemoryTest' '-Dagent.d3.output=.\benchmark-runs\memory-d3a-20261101-d3e85bfb' '-Dagent.d3.phase=after' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=TechnicalAnchorRetrievalTest,CrossSessionMemoryTest,SemanticMemoryTest,AutoMemoryFlowTest,MemoryConflictTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
 ```
 
 - 基线驱动 1 项成功，产品案例 9/12；复测选择集 27 项成功，产品案例 10/12。

@@ -82,8 +82,8 @@ No M6-B or M6-C implementation is included.
 ## Validation recorded 2026-11-01
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=AutoMemoryFlowTest,MemoryExtractorTest,MemoryManagementTest,CrossSessionMemoryTest' test
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=AutoMemoryFlowTest,MemoryExtractorTest,MemoryManagementTest,CrossSessionMemoryTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
 ```
 
 Final targeted: 35 tests, zero failures/errors/skips. Safe regression: 691 tests,

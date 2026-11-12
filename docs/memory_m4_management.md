@@ -128,8 +128,8 @@ implemented.
 ## Recorded offline validation (2026-10-25)
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=MemoryManagementTest,CrossSessionMemoryTest,SessionContextMemoryTest,ManagedConversationTest,CliSessionStoreTest,SessionDataPrivacyTest' test
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=MemoryManagementTest,CrossSessionMemoryTest,SessionContextMemoryTest,ManagedConversationTest,CliSessionStoreTest,SessionDataPrivacyTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
 ```
 
 - New M4 tests: 13 passed.

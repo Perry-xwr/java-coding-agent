@@ -94,8 +94,8 @@ SPEC and this report. Agent loop, R1/R2 and original Calculator experiments are 
 ## Recorded validation — 2026-11-01
 
 ```powershell
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dtest=MemoryConflictTest,AutoMemoryFlowTest,MemoryManagementTest,SemanticMemoryTest' test
-mvn -o '-Dmaven.repo.local=D:\Development\agent-cli\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dtest=MemoryConflictTest,AutoMemoryFlowTest,MemoryManagementTest,SemanticMemoryTest' test
+mvn -o '-Dmaven.repo.local=.\.m2\repository' '-Dglm.integration=false' '-Dtest=*,!OpenAiCompatibleClientTest,!AgentRequestUsageTest' test
 ```
 
 Final targeted: 31 tests, zero failures/errors/skips; six new conflict tests passed.
